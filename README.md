@@ -1,13 +1,13 @@
 # If the Moon Were Only One Pixel: 3D Interactive Solar System
 
 ![Demo of the interactive 3D Solar System](pics/demo2.png)
-*Demo: Conceptual visualization of the solar system (not yet to scale)*
+*Demo: Visualization of the solar system using a true Moon-diameter-per-pixel scale and light-speed simulation*
 
 This project is inspired by [Josh Worth's "If the Moon Were Only 1 Pixel"](https://joshworth.com/dev/pixelspace/pixelspace_solarsystem.html), which beautifully depicts the incomprehensible scale of our solar system—using a single pixel to represent the Moon's true diameter (1 pixel = 3,474.4 km). While that work offered a 2D, scrollable perspective on cosmic distances, this project takes the concept further into a fully interactive and immersive 3D experience.
 
 ## Purpose
 
-The goal is to help users truly appreciate the vastness of space between celestial objects by bringing the "moon-as-a-pixel" concept into three dimensions. This visualization lets you not only see, but also navigate and interact with a conceptual, to-scale-inspired solar system. You can explore, travel to the planets, and experience the enormous emptiness of space firsthand. *(Note: This version does not yet display fully accurate distances or scales.)*
+The goal is to help users truly appreciate the vastness of space between celestial objects by bringing the "moon-as-a-pixel" concept into three dimensions. This visualization lets you see, navigate, and interact with our solar system at a highly accurate scale—using true distances (1 pixel = 3,474.4 km) and simulating travel at the speed of light. Explore, travel to planets, and experience the vast emptiness of space firsthand.
 
 
 ## Acknowledgements
@@ -18,4 +18,10 @@ The goal is to help users truly appreciate the vastness of space between celesti
 
 ## NOTE
 
-- This is not the finished project and right now is on version 0.5
+- This project is now at version 1.0 and is ready.
+
+## Future Plans
+
+More things will be added in the future—and maybe, you'll even be able to travel to new places or things!
+
+Contributions and suggestions are welcome as the project continues to evolve!
