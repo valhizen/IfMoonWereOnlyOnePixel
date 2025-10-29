@@ -1,6 +1,6 @@
 # If the Moon Were Only One Pixel: 3D Interactive Solar System
 
-![Demo of the interactive 3D Solar System](pics/demo1.png)
+![Demo of the interactive 3D Solar System](pics/demo2.png)
 *Demo: Conceptual visualization of the solar system (not yet to scale)*
 
 This project is inspired by [Josh Worth's "If the Moon Were Only 1 Pixel"](https://joshworth.com/dev/pixelspace/pixelspace_solarsystem.html), which beautifully depicts the incomprehensible scale of our solar system—using a single pixel to represent the Moon's true diameter (1 pixel = 3,474.4 km). While that work offered a 2D, scrollable perspective on cosmic distances, this project takes the concept further into a fully interactive and immersive 3D experience.
