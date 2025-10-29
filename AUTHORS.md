@@ -1,3 +1,8 @@
+# This section lists the people who have contributed to this project.
+# The Author section lists the primary developer(s) of the project.
+# The Contributors section lists any other people who have contributed to the project.
+# The Acknowledgments section lists any other projects or resources that have been used or drawn inspiration from.
+
 # Credits
 
 ## Author
