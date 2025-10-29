@@ -2,7 +2,7 @@
 pkgs.mkShell {
   buildInputs = with pkgs; [
     clang
-lldb
+    lldb
     glfw
     bear
     pkg-config
