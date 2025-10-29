@@ -91,10 +91,10 @@ Application::Application(int width, int height, const char *title)
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     
     // Primary Monitor will be used
-    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-    const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+    // GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+    // const GLFWvidmode* mode = glfwGetVideoMode(monitor);
     
-    m_Window = glfwCreateWindow(mode->width, mode->height, title, monitor, nullptr);
+    m_Window = glfwCreateWindow(width, height, title, nullptr, nullptr);
     if (m_Window == nullptr)
         throw std::runtime_error("Failed to create window");
     
