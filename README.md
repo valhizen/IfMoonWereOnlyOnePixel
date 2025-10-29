@@ -1,27 +1,96 @@
 # If the Moon Were Only One Pixel: 3D Interactive Solar System
 
 ![Demo of the interactive 3D Solar System](pics/demo2.png)
-*Demo: Visualization of the solar system using a true Moon-diameter-per-pixel scale and light-speed simulation*
 
-This project is inspired by [Josh Worth's "If the Moon Were Only 1 Pixel"](https://joshworth.com/dev/pixelspace/pixelspace_solarsystem.html), which beautifully depicts the incomprehensible scale of our solar system—using a single pixel to represent the Moon's true diameter (1 pixel = 3,474.4 km). While that work offered a 2D, scrollable perspective on cosmic distances, this project takes the concept further into a fully interactive and immersive 3D experience.
+An interactive 3D visualization of our solar system at **true scale** — where 1 pixel equals the Moon's diameter (3,474.8 km).
 
-## Purpose
+Inspired by [Josh Worth's "If the Moon Were Only 1 Pixel"](https://joshworth.com/dev/pixelspace/pixelspace_solarsystem.html), this project extends the concept into fully interactive 3D space. Navigate freely, travel at light speed, and truly *experience* the vast emptiness between planets.
 
-The goal is to help users truly appreciate the vastness of space between celestial objects by bringing the "moon-as-a-pixel" concept into three dimensions. This visualization lets you see, navigate, and interact with our solar system at a highly accurate scale—using true distances (1 pixel = 3,474.4 km) and simulating travel at the speed of light. Explore, travel to planets, and experience the vast emptiness of space firsthand.
+---
 
+## Features
 
-## Acknowledgements
+- **True astronomical scale** - All distances and sizes proportionally accurate
+- **Free 3D navigation** - Explore from any angle
+- **Light-speed travel** - Press C to travel at 299,792 km/s (still takes 8 minutes from Sun to Earth!)
+- **Multiple speed modes** - Normal, Fast (Shift), and Light Speed
+- **Planet information** - View distances, sizes, and travel times
+- **Real-time rendering** - Smooth 60+ FPS
 
-- Inspired by Josh Worth’s [Pixel Space Solar System](https://joshworth.com/dev/pixelspace/pixelspace_solarsystem.html).
-- This 3D project builds on the core idea of mapping cosmic scales to relatable sizes, making them explorable in a far richer, interactive context.
+---
 
+## Controls
 
-## NOTE
+| Key | Action |
+|-----|--------|
+| `W` `A` `S` `D` | Move forward/left/backward/right |
+| `Mouse` | Look around |
+| `Scroll` | Zoom in/out |
+| `Shift` | Fast speed mode (hold) |
+| `C` | Toggle light-speed mode |
+| `ESC` | Exit |
 
-- This project is now at version 1.0 and is ready.
+---
 
-## Future Plans
+## Building from Source
 
-More things will be added in the future—and maybe, you'll even be able to travel to new places or things!
+**Dependencies:** GLFW, GLM, OpenGL 3.3+
 
-Contributions and suggestions are welcome as the project continues to evolve!
+```bash
+make
+./build/main
+```
+
+Built and tested on Linux with Nix. ImGui and GLAD are included in the project.
+
+---
+
+## Quick Start
+
+1. Launch the program
+2. Use `W` to move forward (you start near the Sun)
+3. Press `C` to enable light-speed mode
+4. Navigate to Earth (about 43,000 pixels away)
+5. Watch the timer — even at light speed, it takes 8+ minutes!
+
+**Tip:** The further you travel, the more you'll appreciate the vast emptiness of space.
+
+---
+
+## The Scale
+
+| Object | Distance from Sun | Travel Time at Light Speed |
+|--------|------------------|---------------------------|
+| Mercury | 57.9 million km | 3.2 minutes |
+| Earth | 149.6 million km | 8.3 minutes |
+| Mars | 227.9 million km | 12.7 minutes |
+| Jupiter | 778.5 million km | 43 minutes |
+| Neptune | 4.5 billion km | 4+ hours |
+
+Remember: 1 pixel = 3,474.8 km (the Moon's diameter)
+
+---
+
+## What's Next
+
+This is version 1.0. More features and improvements are planned for future releases.
+
+---
+
+## Acknowledgments
+
+Inspired by Josh Worth's ["If the Moon Were Only 1 Pixel"](https://joshworth.com/dev/pixelspace/pixelspace_solarsystem.html)
+
+Built with: OpenGL, GLFW, GLM, Dear ImGui
+
+---
+
+## License
+
+MIT License - See [LICENSE](LICENSE) file
+
+## Author
+
+See [AUTHORS.md](AUTHORS.md) for credits
+
+**Version 1.0**
