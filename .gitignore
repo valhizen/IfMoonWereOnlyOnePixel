@@ -1,0 +1,17 @@
+# Build artifacts
+build/
+*.o
+
+# Clangd cache
+.cache/
+
+# Compilation database
+compile_commands.json
+
+# Editor/IDE files
+.projectile
+*~
+*.swp
+.vscode/
+.idea/
+

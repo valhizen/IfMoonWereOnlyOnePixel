@@ -1,0 +1,16 @@
+#ifndef PLANET_HPP
+#define PLANET_HPP
+
+#include <string>
+
+
+class Planet{
+public:
+		Planet(float diameter, std::string name);
+		~Planet();
+		void renderSphere();
+};
+
+
+
+#endif
