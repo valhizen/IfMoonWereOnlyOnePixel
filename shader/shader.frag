@@ -9,6 +9,8 @@ uniform vec3 objectColor;
 uniform vec3 viewPos; // Camera position
 uniform float time; // Time for animation
 
+uniform bool isSkySphere;
+
 // Hash function for pseudo-random numbers
 float hash(vec3 p) {
     p = fract(p * 0.3183099 + 0.1);

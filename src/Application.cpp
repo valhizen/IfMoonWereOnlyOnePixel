@@ -187,6 +187,11 @@ void Application::Run() {
     // Neptune - 4495 million km from Sun
     float neptuneDist = (4495000000.0f / MOON_DIAMETER_KM) * PIXELS_PER_MOON;
     planets.push_back(new Planet(49244.0f, "Neptune", neptuneDist, glm::vec3(0.2f, 0.3f, 0.8f)));
+
+
+Planet* skySphere = new Planet(1e8f, "SkySphere", 0.0f, glm::vec3(0.02f, 0.02f, 0.08f));
+skySphere->inverted = true;
+
     
     while (!glfwWindowShouldClose(m_Window)) {
         float currentFrame = glfwGetTime();
@@ -207,6 +212,14 @@ void Application::Run() {
         glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), 
                                                 aspectRatio, 0.1f, 10000000.0f); // Increased far plane
         glm::mat4 view = camera.GetViewMatrix();
+
+glDepthMask(GL_FALSE);
+skySphere->position = camera.Position;
+skySphere->renderSphere(view, projection, camera.Position);
+glDepthMask(GL_TRUE);
+
+
+
         
         // Render all planets
         for (auto* planet : planets) {

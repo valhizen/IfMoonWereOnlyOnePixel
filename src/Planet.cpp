@@ -21,7 +21,13 @@ Planet::Planet(float diameterKM, std::string planetName, float zPosition, glm::v
     // Position: planets go further in -Z (away from camera)
     position = glm::vec3(0.0f, 0.0f, zPosition);
     
-    shader = new Shader("shader/shader.vert", "shader/shader.frag");
+
+    if (name == "SkySphere") {
+        shader = new Shader("shader/shader.vert", "shader/shader1.frag");
+        inverted = true; // render inside-out
+    } else {
+        shader = new Shader("shader/shader.vert", "shader/shader.frag");
+    }
     GenerateSphere();
 }
 
@@ -90,26 +96,30 @@ void Planet::GenerateSphere() {
 
 void Planet::renderSphere(const glm::mat4& view, const glm::mat4& projection, glm::vec3 campos) {
     shader->use();
-    
-    // Model matrix: translate to position and scale by radius
+
     glm::mat4 model = glm::mat4(1.0f);
     model = glm::translate(model, position);
     model = glm::scale(model, glm::vec3(radius));
-    
+
     shader->setMat4("model", model);
     shader->setMat4("view", view);
     shader->setMat4("projection", projection);
-
-shader->setVec3("viewPos", campos);
-shader->setFloat("time", (float)glfwGetTime());
-
-    // Set color uniform
+    shader->setVec3("viewPos", campos);
+    shader->setFloat("time", (float)glfwGetTime());
     shader->setVec3("objectColor", color);
-    
+
+    if (inverted)
+        glFrontFace(GL_CW);
+    else
+        glFrontFace(GL_CCW);
+
     glBindVertexArray(sphereVAO);
     glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
+
+    glFrontFace(GL_CCW); // restore
 }
+
 
 glm::vec3 Planet::getPosition() const {
     return position;
@@ -133,3 +143,5 @@ Planet::~Planet() {
     glDeleteBuffers(1, &ebo);
     delete shader;
 }
+
+

@@ -9,14 +9,12 @@
 
 class Planet {
 private:
-    Shader* shader;
     unsigned int sphereVAO;
     unsigned int vbo, ebo;
     unsigned int indexCount;
     
     float radius; // In pixels (scaled)
     float diameterInKM; // Store original diameter
-    glm::vec3 position;
     std::string name;
     glm::vec3 color;
     
@@ -27,12 +25,19 @@ public:
     void renderSphere(const glm::mat4& view, const glm::mat4& projection, glm::vec3 campo);
     
     // Getters
+
+    glm::vec3 position;
     glm::vec3 getPosition() const;
     std::string getName() const;
     float getRadius() const;
 
     float getDiameterKM() const;
 		Camera camera;
+    Shader* shader;
+
+
+bool inverted = false;
+
 
 
     
