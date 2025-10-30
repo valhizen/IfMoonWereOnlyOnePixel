@@ -8,6 +8,8 @@
 #include <GLFW/glfw3.h>
 #include <stdexcept>
 #include <vector>
+#include <string>
+#include <algorithm>
 
 Camera camera(glm::vec3(0.0f, 500.0f, -3000.0f));
 
@@ -28,6 +30,11 @@ bool useFastSpeed = false;
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
+// Planet search
+bool showSearchDialog = false;
+char searchBuffer[256] = "";
+bool searchJustOpened = false;
+
 void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
   glViewport(0, 0, width, height);
 }
@@ -35,6 +42,20 @@ void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
 void processInput(GLFWwindow *window) {
   if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
     glfwSetWindowShouldClose(window, true);
+
+  // Toggle search dialog with / key
+  static bool slashKeyPressed = false;
+  if (glfwGetKey(window, GLFW_KEY_SLASH) == GLFW_PRESS && !slashKeyPressed) {
+    showSearchDialog = !showSearchDialog;
+    if (showSearchDialog) {
+      searchBuffer[0] = '\0';
+      searchJustOpened = true;
+    }
+    slashKeyPressed = true;
+  }
+  if (glfwGetKey(window, GLFW_KEY_SLASH) == GLFW_RELEASE) {
+    slashKeyPressed = false;
+  }
 
   // Toggle light speed with C key
   static bool cKeyPressed = false;
@@ -261,6 +282,77 @@ void Application::Run() {
 
     float distToEarth = glm::length(camera.Position - glm::vec3(0, 0, earthDist));
 
+    // Planet search dialog
+    if (showSearchDialog) {
+      ImGui::SetNextWindowPos(ImVec2(displayWidth / 2 - 200, 100), ImGuiCond_Always);
+      ImGui::SetNextWindowSize(ImVec2(400, 0), ImGuiCond_Always);
+      ImGui::SetNextWindowBgAlpha(0.95f);
+      ImGui::Begin("Go to Planet", &showSearchDialog, 
+                   ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+      
+      if (searchJustOpened) {
+        ImGui::SetKeyboardFocusHere();
+        searchJustOpened = false;
+      }
+      
+      ImGui::Text("Type planet name:");
+      bool enterPressed = ImGui::InputText("##search", searchBuffer, 
+                                           sizeof(searchBuffer), 
+                                           ImGuiInputTextFlags_EnterReturnsTrue);
+      
+      std::string searchStr(searchBuffer);
+      std::transform(searchStr.begin(), searchStr.end(), searchStr.begin(), ::tolower);
+      
+      ImGui::Separator();
+      ImGui::Text("Available planets:");
+      
+      Planet* selectedPlanet = nullptr;
+      
+      for (auto *planet : planets) {
+        std::string planetName = planet->getName();
+        std::string planetNameLower = planetName;
+        std::transform(planetNameLower.begin(), planetNameLower.end(), 
+                      planetNameLower.begin(), ::tolower);
+        
+        if (searchStr.empty() || planetNameLower.find(searchStr) != std::string::npos) {
+          if (ImGui::Button(planetName.c_str(), ImVec2(-1, 0))) {
+            selectedPlanet = planet;
+          }
+        }
+      }
+      
+      // Handle planet selection
+      if (selectedPlanet || enterPressed) {
+        if (!selectedPlanet && !searchStr.empty()) {
+          // Find first matching planet on Enter
+          for (auto *planet : planets) {
+            std::string planetNameLower = planet->getName();
+            std::transform(planetNameLower.begin(), planetNameLower.end(), 
+                          planetNameLower.begin(), ::tolower);
+            if (planetNameLower.find(searchStr) != std::string::npos) {
+              selectedPlanet = planet;
+              break;
+            }
+          }
+        }
+        
+        if (selectedPlanet) {
+          glm::vec3 targetPos = selectedPlanet->getPosition();
+          float planetRadius = selectedPlanet->getRadius();
+          
+          // Position camera 500px in front of the planet
+          float viewDistance = planetRadius + 500.0f;
+          
+          camera.Position = targetPos + glm::vec3(0, 0, -viewDistance);
+          
+          showSearchDialog = false;
+          searchBuffer[0] = '\0';
+        }
+      }
+      
+      ImGui::End();
+    }
+
     // Draw labels for visible planets
     for (auto *planet : planets) {
       glm::vec3 planetPos = planet->getPosition();
@@ -377,6 +469,7 @@ void Application::Run() {
     ImGui::Text("  W/A/S/D: Move");
     ImGui::Text("  Shift: Fast speed");
     ImGui::Text("  C: Light speed toggle");
+    ImGui::Text("  /: Search planets");
     ImGui::Text("  Mouse: Look around");
 
     ImGui::End();
