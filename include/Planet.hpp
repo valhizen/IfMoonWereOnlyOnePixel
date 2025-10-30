@@ -12,6 +12,7 @@ private:
     unsigned int sphereVAO;
     unsigned int vbo, ebo;
     unsigned int indexCount;
+    unsigned int textureID;
     
     float radius; // In pixels (scaled)
     float diameterInKM; // Store original diameter
@@ -21,8 +22,9 @@ private:
     void GenerateSphere();
     
 public:
-    Planet(float diameterKM, std::string planetName, float zPosition, glm::vec3 planetColor = glm::vec3(1.0f, 0.7f, 0.2f));
+    Planet(float diameterKM, std::string planetName, float zPosition, glm::vec3 planetColor = glm::vec3(1.0f, 0.7f, 0.2f), const char* texturePath = nullptr);
     void renderSphere(const glm::mat4& view, const glm::mat4& projection, glm::vec3 campo);
+		unsigned int loadTexture(char const * path);
     
     // Getters
 
@@ -38,9 +40,6 @@ public:
 
 bool inverted = false;
 
-
-
-    
     ~Planet();
 };
 
