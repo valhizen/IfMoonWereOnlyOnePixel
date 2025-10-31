@@ -93,7 +93,7 @@ void main()
     vec3 nebulaEffect = nebula(viewDir) * (1.0 - diff);
     
     // Final composition
-    result += stars + nebulaEffect;
+    result +=nebulaEffect;
     
     FragColor = vec4(result, 1.0);
 }

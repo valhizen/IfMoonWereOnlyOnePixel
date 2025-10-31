@@ -11,5 +11,6 @@ pkgs.mkShell {
     xorg.libXinerama
     xorg.libXcursor
     xorg.libXi
+libtiff
  ];
 }

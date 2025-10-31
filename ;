@@ -19,10 +19,10 @@ CXXFLAGS := -I$(INCLUDE_DIR) \
             -I$(IMGUI_INCLUDE) \
             -I$(IMGUI_INCLUDE)/backends \
             -I$(GLAD_INCLUDE_DIR) \
-            $(shell pkg-config --cflags glfw3 x11 )
+            $(shell pkg-config --cflags glfw3 x11 libtiff)
 
-LDFLAGS := $(shell pkg-config --libs glfw3 x11 ) \
-           -lGL -lpthread -ldl -ltiff
+LDFLAGS := $(shell pkg-config --libs glfw3 x11 libtiff) \
+           -lGL -lpthread -ldl
 
 # ImGui source files (from src/imgui/)
 IMGUI_SRCS := $(IMGUI_SRC)/imgui.cpp \
@@ -38,9 +38,7 @@ MY_SRCS := $(SRC_DIR)/main.cpp \
            $(SRC_DIR)/Application.cpp \
 						$(SRC_DIR)/Planet.cpp \
 						$(SRC_DIR)/Shader.cpp \
-						$(SRC_DIR)/Camera.cpp \
-						$(SRC_DIR)/readTexture.cpp
-
+						$(SRC_DIR)/Camera.cpp
 
 
 # GLAD source

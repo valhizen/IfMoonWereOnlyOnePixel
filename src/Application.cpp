@@ -180,71 +180,92 @@ void Application::Run() {
 
   std::vector<Planet *> planets;
 
-  // Sun at origin with texture
-  planets.push_back(new Planet(1392000.0f, "Sun", 0.0f, 
-                               glm::vec3(1.0f, 0.9f, 0.2f),
-                               "assets/sunmap.jpg"));
+  // Sun at origin
+  Planet* sun = new Planet(1392000.0f, "Sun", 0.0f, 
+                           glm::vec3(1.0f, 0.9f, 0.2f),
+                           "assets/sunmap.jpg");
+  planets.push_back(sun);
 
-  // Mercury
+  // Mercury orbiting Sun
   float mercuryDist = 57900000.0f / MOON_DIAMETER_KM;
-  planets.push_back(new Planet(4879.0f, "Mercury", mercuryDist, 
+  Planet* mercury = new Planet(4879.0f, "Mercury", 0.0f, 
                                glm::vec3(0.7f, 0.7f, 0.7f),
-                               "assets/mercurymap.jpg"));
+                               "assets/8k_mercury.jpg");
+  mercury->setOrbitParent(sun, mercuryDist, 0.04f);
+  planets.push_back(mercury);
 
-  // Venus
+  // Venus orbiting Sun
   float venusDist = 108200000.0f / MOON_DIAMETER_KM;
-  planets.push_back(new Planet(12104.0f, "Venus", venusDist, 
-                               glm::vec3(0.9f, 0.7f, 0.5f),
-                               "assets/venusmap.jpg"));
+  Planet* venus = new Planet(12104.0f, "Venus", 0.0f, 
+                            glm::vec3(0.9f, 0.7f, 0.5f),
+                            "assets/8k_venus_surface.jpg");
+  venus->setOrbitParent(sun, venusDist, 0.03f);
+  planets.push_back(venus);
 
-  // Earth with texture
+  // Earth orbiting Sun
   float earthDist = 149600000.0f / MOON_DIAMETER_KM;
-  planets.push_back(new Planet(12742.0f, "Earth", earthDist, 
-                               glm::vec3(0.2f, 0.5f, 1.0f),
-                               "assets/earthmap1k.jpg"));
+  Planet* earth = new Planet(12742.0f, "Earth", 0.0f, 
+                            glm::vec3(0.2f, 0.5f, 1.0f),
+                            "assets/Earth-Color-Map-8k.png");
+  earth->setOrbitParent(sun, earthDist, 0.02f);
+  planets.push_back(earth);
 
-  // Moon (no texture available, use color)
-  float moonDistFromEarth = 384400.0f / MOON_DIAMETER_KM;
-  planets.push_back(new Planet(3474.8f, "Moon", earthDist + moonDistFromEarth,
-                               glm::vec3(0.6f, 0.6f, 0.6f),
-                               nullptr));
+  // // Moon orbiting Earth
+  // float moonDistFromEarth = 384400.0f / MOON_DIAMETER_KM;
+  // Planet* moon = new Planet(3474.8f, "Moon", 0.0f,
+  //                          glm::vec3(0.6f, 0.6f, 0.6f),
+  //                          nullptr);
+  // moon->setOrbitParent(earth, moonDistFromEarth);
+  // planets.push_back(moon);
 
-  // Mars with texture
+  // Mars orbiting Sun
   float marsDist = 227900000.0f / MOON_DIAMETER_KM;
-  planets.push_back(new Planet(6779.0f, "Mars", marsDist, 
-                               glm::vec3(0.8f, 0.3f, 0.2f),
-                               "assets/mars_1k_color.jpg"));
+  Planet* mars = new Planet(6779.0f, "Mars", 0.0f, 
+                           glm::vec3(0.8f, 0.3f, 0.2f),
+                           "assets/8k_mars.jpg");
+  mars->setOrbitParent(sun, marsDist, 0.015f);
+  planets.push_back(mars);
 
-  // Jupiter with texture
+  // Jupiter orbiting Sun
   float jupiterDist = 778500000.0f / MOON_DIAMETER_KM;
-  planets.push_back(new Planet(139820.0f, "Jupiter", jupiterDist,
-                               glm::vec3(0.8f, 0.6f, 0.4f),
-                               "assets/jupitermap.jpg"));
+  Planet* jupiter = new Planet(139820.0f, "Jupiter", 0.0f,
+                              glm::vec3(0.8f, 0.6f, 0.4f),
+                              "assets/8k_jupiter.jpg");
+  jupiter->setOrbitParent(sun, jupiterDist, 0.008f);
+  planets.push_back(jupiter);
 
-  // Saturn with texture
+  // Saturn orbiting Sun
   float saturnDist = 1434000000.0f / MOON_DIAMETER_KM;
-  planets.push_back(new Planet(116460.0f, "Saturn", saturnDist, 
-                               glm::vec3(0.9f, 0.8f, 0.6f),
-                               "assets/saturnmap.jpg"));
+  Planet* saturn = new Planet(116460.0f, "Saturn", 0.0f, 
+                             glm::vec3(0.9f, 0.8f, 0.6f),
+                             "assets/8k_saturn.jpg");
+  saturn->setOrbitParent(sun, saturnDist, 0.005f);
+  planets.push_back(saturn);
 
-  // Uranus with texture
+  // Uranus orbiting Sun
   float uranusDist = 2871000000.0f / MOON_DIAMETER_KM;
-  planets.push_back(new Planet(50724.0f, "Uranus", uranusDist, 
-                               glm::vec3(0.5f, 0.8f, 0.9f),
-                               "assets/uranusmap.jpg"));
+  Planet* uranus = new Planet(50724.0f, "Uranus", 0.0f, 
+                             glm::vec3(0.5f, 0.8f, 0.9f),
+                             "assets/2k_uranus.jpg");
+  uranus->setOrbitParent(sun, uranusDist, 0.003f);
+  planets.push_back(uranus);
 
-  // Neptune with texture
+  // Neptune orbiting Sun
   float neptuneDist = 4495000000.0f / MOON_DIAMETER_KM;
-  planets.push_back(new Planet(49244.0f, "Neptune", neptuneDist,
-                               glm::vec3(0.2f, 0.3f, 0.8f),
-                               "assets/neptunemap.jpg"));
+  Planet* neptune = new Planet(49244.0f, "Neptune", 0.0f,
+                              glm::vec3(0.2f, 0.3f, 0.8f),
+                              "assets/2k_neptune.jpg");
+  neptune->setOrbitParent(sun, neptuneDist, 0.002f);
+  planets.push_back(neptune);
 
-  // Sky sphere
+  // Sky sphere (no orbit)
   Planet *skySphere = new Planet(1e8f, "SkySphere", 0.0f, 
                                  glm::vec3(0.02f, 0.02f, 0.08f),
                                  nullptr);
   skySphere->inverted = true;
+	float value;
 
+  // Main game loop
   while (!glfwWindowShouldClose(m_Window)) {
     float currentFrame = glfwGetTime();
     deltaTime = currentFrame - lastFrame;
@@ -253,6 +274,11 @@ void Application::Run() {
     processInput(m_Window);
     glfwPollEvents();
 
+    // UPDATE ALL PLANETS FIRST (before rendering)
+    for (auto *planet : planets) {
+      planet->update(deltaTime);
+    }
+    
     int displayWidth, displayHeight;
     glfwGetFramebufferSize(m_Window, &displayWidth, &displayHeight);
 
@@ -263,10 +289,13 @@ void Application::Run() {
     glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom),
                                             aspectRatio, 0.1f, 10000000.0f);
     glm::mat4 view = camera.GetViewMatrix();
+// Before rendering the sky sphere
+skySphere->setPosition(camera.Position);
+skySphere->renderSphere(view, projection, camera.Position);
+
 
     // Render sky sphere
     glDepthMask(GL_FALSE);
-    skySphere->position = camera.Position;
     skySphere->renderSphere(view, projection, camera.Position);
     glDepthMask(GL_TRUE);
 
@@ -280,7 +309,9 @@ void Application::Run() {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    float distToEarth = glm::length(camera.Position - glm::vec3(0, 0, earthDist));
+    // Get Earth's current position for distance calculation
+    glm::vec3 earthPos = earth->getPosition();
+    float distToEarth = glm::length(camera.Position - earthPos);
 
     // Planet search dialog
     if (showSearchDialog) {
@@ -453,7 +484,7 @@ void Application::Run() {
     ImGui::Text("  Neptune: 1,293,488 px");
 
     ImGui::Separator();
-    float distToSun = glm::length(camera.Position - glm::vec3(0, 0, 0));
+    float distToSun = glm::length(camera.Position - sun->getPosition());
     ImGui::Text("Your distance from Sun: %.0f px", distToSun);
 
     ImGui::Separator();

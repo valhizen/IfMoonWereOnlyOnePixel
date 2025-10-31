@@ -6,7 +6,7 @@
 
 class Shader{
 public:
-		int ID;
+		unsigned int ID = 0;
 		Shader(const char* vertexPath, const char* fragmentPart);
 		void use();
 
