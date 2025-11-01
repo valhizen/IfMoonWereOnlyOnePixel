@@ -3,6 +3,7 @@
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
+#include "ImGuiStyle.hpp"
 #include "Planet.hpp"
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -26,6 +27,18 @@ const float LIGHT_SPEED = 299792.458f / MOON_DIAMETER_KM;
 bool useLightSpeed = false;
 bool useFastSpeed = false;
 
+// Mouse control
+bool cursorEnabled = false;
+bool showExitDialog = false;
+
+// Camera tracking
+Planet* trackedPlanet = nullptr;
+bool cameraTrackingEnabled = false;
+float cameraTrackDistance = 1000.0f;
+float cameraOrbitAngle = 0.0f;
+float cameraOrbitSpeed = 0.5f;
+bool cameraOrbitMode = false;
+
 // Timing
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
@@ -40,8 +53,15 @@ void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
 }
 
 void processInput(GLFWwindow *window) {
-  if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-    glfwSetWindowShouldClose(window, true);
+  // Escape key now shows exit confirmation
+  static bool escKeyPressed = false;
+  if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS && !escKeyPressed) {
+    showExitDialog = true;
+    escKeyPressed = true;
+  }
+  if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_RELEASE) {
+    escKeyPressed = false;
+  }
 
   // Toggle search dialog with / key
   static bool slashKeyPressed = false;
@@ -72,6 +92,73 @@ void processInput(GLFWwindow *window) {
     cKeyPressed = false;
   }
 
+  // Toggle camera tracking with T key
+  static bool tKeyPressed = false;
+  if (glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS && !tKeyPressed) {
+    cameraTrackingEnabled = !cameraTrackingEnabled;
+    if (!cameraTrackingEnabled) {
+      trackedPlanet = nullptr;
+    }
+    tKeyPressed = true;
+  }
+  if (glfwGetKey(window, GLFW_KEY_T) == GLFW_RELEASE) {
+    tKeyPressed = false;
+  }
+  
+  // Toggle camera orbit mode with F key
+  static bool fKeyPressed = false;
+  if (glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS && !fKeyPressed) {
+    cameraOrbitMode = !cameraOrbitMode;
+    fKeyPressed = true;
+  }
+  if (glfwGetKey(window, GLFW_KEY_F) == GLFW_RELEASE) {
+    fKeyPressed = false;
+  }
+  
+  // Toggle fullscreen with F11 key
+  static bool f11KeyPressed = false;
+  if (glfwGetKey(window, GLFW_KEY_F11) == GLFW_PRESS && !f11KeyPressed) {
+    static bool isFullscreen = false;
+    static int windowedX = 100, windowedY = 100;
+    static int windowedWidth = 1920, windowedHeight = 1080;
+    
+    isFullscreen = !isFullscreen;
+    GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+    const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+    
+    if (isFullscreen) {
+      // Save windowed position and size
+      glfwGetWindowPos(window, &windowedX, &windowedY);
+      glfwGetWindowSize(window, &windowedWidth, &windowedHeight);
+      // Switch to fullscreen
+      glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+    } else {
+      // Restore windowed mode
+      glfwSetWindowMonitor(window, nullptr, windowedX, windowedY, windowedWidth, windowedHeight, 0);
+    }
+    
+    f11KeyPressed = true;
+  }
+  if (glfwGetKey(window, GLFW_KEY_F11) == GLFW_RELEASE) {
+    f11KeyPressed = false;
+  }
+
+  // Toggle cursor mode with TAB key
+  static bool tabKeyPressed = false;
+  if (glfwGetKey(window, GLFW_KEY_TAB) == GLFW_PRESS && !tabKeyPressed) {
+    cursorEnabled = !cursorEnabled;
+    if (cursorEnabled) {
+      glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    } else {
+      glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+      firstMouse = true;  // Reset to avoid camera jump
+    }
+    tabKeyPressed = true;
+  }
+  if (glfwGetKey(window, GLFW_KEY_TAB) == GLFW_RELEASE) {
+    tabKeyPressed = false;
+  }
+
   // Fast speed with Shift
   if (!useLightSpeed) {
     if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
@@ -96,6 +183,11 @@ void processInput(GLFWwindow *window) {
 }
 
 void mouse_callback(GLFWwindow *window, double xposIn, double yposIn) {
+  // Only process camera movement when cursor is disabled (flight mode)
+  if (cursorEnabled) {
+    return;  // Cursor is free for UI interaction
+  }
+
   float xpos = static_cast<float>(xposIn);
   float ypos = static_cast<float>(yposIn);
 
@@ -128,15 +220,22 @@ Application::Application(int width, int height, const char *title)
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-  m_Window = glfwCreateWindow(width, height, title, nullptr, nullptr);
+  // Start in FULLSCREEN mode
+  GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+  const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+  m_Window = glfwCreateWindow(mode->width, mode->height, title, monitor, nullptr);
   if (m_Window == nullptr)
     throw std::runtime_error("Failed to create window");
 
   glfwMakeContextCurrent(m_Window);
+  glfwSwapInterval(1);  // Enable vsync
 
   glfwSetCursorPosCallback(m_Window, mouse_callback);
   glfwSetScrollCallback(m_Window, scroll_callback);
-  glfwSetInputMode(m_Window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+  
+  // Start in UI mode with cursor enabled (press TAB to toggle to flight mode)
+  glfwSetInputMode(m_Window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+  cursorEnabled = true;
 
   if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
     throw std::runtime_error("Error initializing GLAD");
@@ -150,6 +249,9 @@ Application::Application(int width, int height, const char *title)
   ImGuiIO &io = ImGui::GetIO();
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+
+  // Apply vintage squared theme from separate style file
+  VintageStyle::ApplyVintageSquaredTheme();
 
   ImGui_ImplGlfw_InitForOpenGL(m_Window, true);
   ImGui_ImplOpenGL3_Init("#version 460");
@@ -180,90 +282,176 @@ void Application::Run() {
 
   std::vector<Planet *> planets;
 
-  // Sun at origin
+  // =============================================================================
+  // SUN - Center of solar system with emissive glow
+  // =============================================================================
   Planet* sun = new Planet(1392000.0f, "Sun", 0.0f, 
                            glm::vec3(1.0f, 0.9f, 0.2f),
                            "assets/sunmap.jpg");
+  sun->setPosition(glm::vec3(0.0f, 0.0f, 0.0f));
+  
+  Planet::VisualParams sunVisual;
+  sunVisual.radiusScale = 1.0f;
+  sunVisual.emissiveStrength = 1.0f;
+  sunVisual.emissiveColor = glm::vec3(1.0f, 0.9f, 0.2f);
+  sunVisual.showOrbitPath = false;
+  sun->setVisualParams(sunVisual);
+  
+  Planet::RotationParams sunRot;
+  sunRot.rotationPeriodHours = 25.0f * 24.0f;
+  sunRot.axialTiltDeg = 7.25f;
+  sunRot.initialRotationDeg = 0.0f;
+  sun->setRotation(sunRot);
+  
   planets.push_back(sun);
 
-  // Mercury orbiting Sun
-  float mercuryDist = 57900000.0f / MOON_DIAMETER_KM;
+  // =============================================================================
+  // PLANETS - All with realistic Keplerian orbits
+  // =============================================================================
+  
+  // MERCURY
   Planet* mercury = new Planet(4879.0f, "Mercury", 0.0f, 
                                glm::vec3(0.7f, 0.7f, 0.7f),
                                "assets/8k_mercury.jpg");
-  mercury->setOrbitParent(sun, mercuryDist, 0.04f);
+  mercury->setOrbit(sun, PlanetPresets::getMercuryOrbit());
+  mercury->setRotation(PlanetPresets::getMercuryRotation());
+  Planet::VisualParams mercuryVisual;
+  mercuryVisual.radiusScale = 8.0f;
+  mercuryVisual.showOrbitPath = true;
+  mercuryVisual.orbitPathColor = glm::vec3(0.7f, 0.7f, 0.7f);
+  mercuryVisual.orbitSegments = 256;
+  mercury->setVisualParams(mercuryVisual);
   planets.push_back(mercury);
 
-  // Venus orbiting Sun
-  float venusDist = 108200000.0f / MOON_DIAMETER_KM;
+  // VENUS
   Planet* venus = new Planet(12104.0f, "Venus", 0.0f, 
                             glm::vec3(0.9f, 0.7f, 0.5f),
                             "assets/8k_venus_surface.jpg");
-  venus->setOrbitParent(sun, venusDist, 0.03f);
+  venus->setOrbit(sun, PlanetPresets::getVenusOrbit());
+  venus->setRotation(PlanetPresets::getVenusRotation());
+  Planet::VisualParams venusVisual;
+  venusVisual.radiusScale = 8.0f;
+  venusVisual.showOrbitPath = true;
+  venusVisual.orbitPathColor = glm::vec3(0.9f, 0.7f, 0.5f);
+  venusVisual.orbitSegments = 256;
+  venus->setVisualParams(venusVisual);
   planets.push_back(venus);
 
-  // Earth orbiting Sun
-  float earthDist = 149600000.0f / MOON_DIAMETER_KM;
+  // EARTH
   Planet* earth = new Planet(12742.0f, "Earth", 0.0f, 
                             glm::vec3(0.2f, 0.5f, 1.0f),
                             "assets/Earth-Color-Map-8k.png");
-  earth->setOrbitParent(sun, earthDist, 0.02f);
+  earth->setOrbit(sun, PlanetPresets::getEarthOrbit());
+  earth->setRotation(PlanetPresets::getEarthRotation());
+  Planet::VisualParams earthVisual;
+  earthVisual.radiusScale = 8.0f;
+  earthVisual.showOrbitPath = true;
+  earthVisual.orbitPathColor = glm::vec3(0.2f, 0.5f, 1.0f);
+  earthVisual.orbitSegments = 360;
+  earth->setVisualParams(earthVisual);
   planets.push_back(earth);
 
-  // // Moon orbiting Earth
-  // float moonDistFromEarth = 384400.0f / MOON_DIAMETER_KM;
-  // Planet* moon = new Planet(3474.8f, "Moon", 0.0f,
-  //                          glm::vec3(0.6f, 0.6f, 0.6f),
-  //                          nullptr);
-  // moon->setOrbitParent(earth, moonDistFromEarth);
-  // planets.push_back(moon);
-
-  // Mars orbiting Sun
-  float marsDist = 227900000.0f / MOON_DIAMETER_KM;
+  // MARS
   Planet* mars = new Planet(6779.0f, "Mars", 0.0f, 
                            glm::vec3(0.8f, 0.3f, 0.2f),
                            "assets/8k_mars.jpg");
-  mars->setOrbitParent(sun, marsDist, 0.015f);
+  mars->setOrbit(sun, PlanetPresets::getMarsOrbit());
+  mars->setRotation(PlanetPresets::getMarsRotation());
+  Planet::VisualParams marsVisual;
+  marsVisual.radiusScale = 8.0f;
+  marsVisual.showOrbitPath = true;
+  marsVisual.orbitPathColor = glm::vec3(0.8f, 0.3f, 0.2f);
+  marsVisual.orbitSegments = 256;
+  mars->setVisualParams(marsVisual);
   planets.push_back(mars);
 
-  // Jupiter orbiting Sun
-  float jupiterDist = 778500000.0f / MOON_DIAMETER_KM;
+  // JUPITER
   Planet* jupiter = new Planet(139820.0f, "Jupiter", 0.0f,
                               glm::vec3(0.8f, 0.6f, 0.4f),
                               "assets/8k_jupiter.jpg");
-  jupiter->setOrbitParent(sun, jupiterDist, 0.008f);
+  jupiter->setOrbit(sun, PlanetPresets::getJupiterOrbit());
+  jupiter->setRotation(PlanetPresets::getJupiterRotation());
+  Planet::VisualParams jupiterVisual;
+  jupiterVisual.radiusScale = 3.0f;
+  jupiterVisual.showOrbitPath = true;
+  jupiterVisual.orbitPathColor = glm::vec3(0.8f, 0.6f, 0.4f);
+  jupiterVisual.orbitSegments = 360;
+  jupiter->setVisualParams(jupiterVisual);
   planets.push_back(jupiter);
 
-  // Saturn orbiting Sun
-  float saturnDist = 1434000000.0f / MOON_DIAMETER_KM;
+  // SATURN
   Planet* saturn = new Planet(116460.0f, "Saturn", 0.0f, 
                              glm::vec3(0.9f, 0.8f, 0.6f),
                              "assets/8k_saturn.jpg");
-  saturn->setOrbitParent(sun, saturnDist, 0.005f);
+  saturn->setOrbit(sun, PlanetPresets::getSaturnOrbit());
+  saturn->setRotation(PlanetPresets::getSaturnRotation());
+  Planet::VisualParams saturnVisual;
+  saturnVisual.radiusScale = 3.0f;
+  saturnVisual.showOrbitPath = true;
+  saturnVisual.orbitPathColor = glm::vec3(0.9f, 0.8f, 0.6f);
+  saturnVisual.orbitSegments = 360;
+  saturn->setVisualParams(saturnVisual);
   planets.push_back(saturn);
 
-  // Uranus orbiting Sun
-  float uranusDist = 2871000000.0f / MOON_DIAMETER_KM;
+  // URANUS
   Planet* uranus = new Planet(50724.0f, "Uranus", 0.0f, 
                              glm::vec3(0.5f, 0.8f, 0.9f),
                              "assets/2k_uranus.jpg");
-  uranus->setOrbitParent(sun, uranusDist, 0.003f);
+  uranus->setOrbit(sun, PlanetPresets::getUranusOrbit());
+  uranus->setRotation(PlanetPresets::getUranusRotation());
+  Planet::VisualParams uranusVisual;
+  uranusVisual.radiusScale = 4.0f;
+  uranusVisual.showOrbitPath = true;
+  uranusVisual.orbitPathColor = glm::vec3(0.5f, 0.8f, 0.9f);
+  uranusVisual.orbitSegments = 360;
+  uranus->setVisualParams(uranusVisual);
   planets.push_back(uranus);
 
-  // Neptune orbiting Sun
-  float neptuneDist = 4495000000.0f / MOON_DIAMETER_KM;
+  // NEPTUNE
   Planet* neptune = new Planet(49244.0f, "Neptune", 0.0f,
                               glm::vec3(0.2f, 0.3f, 0.8f),
                               "assets/2k_neptune.jpg");
-  neptune->setOrbitParent(sun, neptuneDist, 0.002f);
+  neptune->setOrbit(sun, PlanetPresets::getNeptuneOrbit());
+  neptune->setRotation(PlanetPresets::getNeptuneRotation());
+  Planet::VisualParams neptuneVisual;
+  neptuneVisual.radiusScale = 4.0f;
+  neptuneVisual.showOrbitPath = true;
+  neptuneVisual.orbitPathColor = glm::vec3(0.2f, 0.3f, 0.8f);
+  neptuneVisual.orbitSegments = 360;
+  neptune->setVisualParams(neptuneVisual);
   planets.push_back(neptune);
 
-  // Sky sphere (no orbit)
+  // =============================================================================
+  // TIME CONTROL & SIMULATION SETTINGS
+  // =============================================================================
+  float globalTimeScale = 10000.0f;  // Default: 10,000x real time
+  bool showTimeControl = true;
+  bool pauseSimulation = false;
+  
+  Planet::SimulationParams simSettings;
+  simSettings.timeScale = globalTimeScale;
+  simSettings.usePhysicalOrbits = true;
+  simSettings.pauseOrbit = false;
+  simSettings.pauseRotation = false;
+  
+  // Apply simulation settings to all planets
+  for (auto* planet : planets) {
+      planet->setSimulationParams(simSettings);
+  }
+
+  // =============================================================================
+  // SKY SPHERE (background starfield)
+  // =============================================================================
   Planet *skySphere = new Planet(1e8f, "SkySphere", 0.0f, 
                                  glm::vec3(0.02f, 0.02f, 0.08f),
-                                 nullptr);
+                                nullptr );
   skySphere->inverted = true;
-	float value;
+
+  // UI state
+  bool showPlanetLabels = true;
+  bool showCompass = false;  // Disabled by default to prevent overlap
+  bool showPerformance = false;  // FPS shown in HUD
+  bool showInfo = true;
 
   // Main game loop
   while (!glfwWindowShouldClose(m_Window)) {
@@ -279,6 +467,50 @@ void Application::Run() {
       planet->update(deltaTime);
     }
     
+    // Camera tracking logic
+    if (cameraTrackingEnabled && trackedPlanet != nullptr) {
+        glm::vec3 planetPos = trackedPlanet->getPosition();
+        float planetRadius = trackedPlanet->getRadius();
+        
+        if (cameraOrbitMode) {
+            // Orbital camera mode - rotate around planet
+            cameraOrbitAngle += cameraOrbitSpeed * deltaTime;
+            if (cameraOrbitAngle > 360.0f) cameraOrbitAngle -= 360.0f;
+            
+            float angleRad = glm::radians(cameraOrbitAngle);
+            glm::vec3 orbitOffset = glm::vec3(
+                cos(angleRad) * cameraTrackDistance,
+                cameraTrackDistance * 0.3f,  // Slight elevation
+                sin(angleRad) * cameraTrackDistance
+            );
+            
+            camera.Position = planetPos + orbitOffset;
+            
+            // Look at planet
+            glm::vec3 direction = glm::normalize(planetPos - camera.Position);
+            camera.Front = direction;
+            
+            // Recalculate Right and Up vectors
+            camera.Right = glm::normalize(glm::cross(camera.Front, glm::vec3(0.0f, 1.0f, 0.0f)));
+            camera.Up = glm::normalize(glm::cross(camera.Right, camera.Front));
+        } else {
+            // Follow mode - maintain relative position
+            glm::vec3 targetPos = planetPos - camera.Front * cameraTrackDistance;
+            
+            // Smooth camera movement
+            float smoothFactor = 5.0f * deltaTime;
+            camera.Position = glm::mix(camera.Position, targetPos, smoothFactor);
+            
+            // Look at planet
+            glm::vec3 direction = glm::normalize(planetPos - camera.Position);
+            camera.Front = direction;
+            
+            // Recalculate Right and Up vectors
+            camera.Right = glm::normalize(glm::cross(camera.Front, glm::vec3(0.0f, 1.0f, 0.0f)));
+            camera.Up = glm::normalize(glm::cross(camera.Right, camera.Front));
+        }
+    }
+    
     int displayWidth, displayHeight;
     glfwGetFramebufferSize(m_Window, &displayWidth, &displayHeight);
 
@@ -289,15 +521,17 @@ void Application::Run() {
     glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom),
                                             aspectRatio, 0.1f, 10000000.0f);
     glm::mat4 view = camera.GetViewMatrix();
-// Before rendering the sky sphere
-skySphere->setPosition(camera.Position);
-skySphere->renderSphere(view, projection, camera.Position);
-
 
     // Render sky sphere
+    skySphere->setPosition(camera.Position);
     glDepthMask(GL_FALSE);
     skySphere->renderSphere(view, projection, camera.Position);
     glDepthMask(GL_TRUE);
+
+    // Render orbit paths
+    for (auto *planet : planets) {
+        planet->renderOrbitPath(view, projection);
+    }
 
     // Render all planets
     for (auto *planet : planets) {
@@ -312,6 +546,391 @@ skySphere->renderSphere(view, projection, camera.Position);
     // Get Earth's current position for distance calculation
     glm::vec3 earthPos = earth->getPosition();
     float distToEarth = glm::length(camera.Position - earthPos);
+
+    // =============================================================================
+    // ADVANCED UI PANELS
+    // =============================================================================
+    
+    // TIME CONTROL PANEL - Top Right (moved down to avoid top HUD)
+    if (showTimeControl) {
+        ImGui::SetNextWindowPos(ImVec2(displayWidth - 320, 120), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowBgAlpha(0.93f);
+        ImGui::Begin("Time Control", &showTimeControl, ImGuiWindowFlags_AlwaysAutoResize);
+        
+        ImGui::TextColored(ImVec4(0.8f, 0.9f, 1.0f, 1.0f), "Simulation Speed");
+        ImGui::Separator();
+        ImGui::Spacing();
+        
+        // Quick preset buttons
+        if (ImGui::Button("Real Time", ImVec2(95, 0))) globalTimeScale = 1.0f;
+        ImGui::SameLine();
+        if (ImGui::Button("1 Day/s", ImVec2(95, 0))) globalTimeScale = 86400.0f;
+        ImGui::SameLine();
+        if (ImGui::Button("1 Week/s", ImVec2(95, 0))) globalTimeScale = 604800.0f;
+        
+        if (ImGui::Button("10k x", ImVec2(95, 0))) globalTimeScale = 10000.0f;
+        ImGui::SameLine();
+        if (ImGui::Button("100k x", ImVec2(95, 0))) globalTimeScale = 100000.0f;
+        ImGui::SameLine();
+        if (ImGui::Button("1M x", ImVec2(95, 0))) globalTimeScale = 1000000.0f;
+        
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4(0.7f, 0.8f, 0.9f, 1.0f), "Custom Speed:");
+        ImGui::SliderFloat("##TimeScale", &globalTimeScale, 1.0f, 100000000.0f, 
+                          "%.0f x", ImGuiSliderFlags_Logarithmic);
+        
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+        
+        // Pause controls
+        if (ImGui::Checkbox("Pause Simulation", &pauseSimulation)) {
+            simSettings.pauseOrbit = pauseSimulation;
+            simSettings.pauseRotation = pauseSimulation;
+        }
+        ImGui::SameLine();
+        ImGui::Checkbox("Physical Orbits", &simSettings.usePhysicalOrbits);
+        
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+        
+        // Current status
+        ImGui::TextColored(ImVec4(0.5f, 1.0f, 0.5f, 1.0f), "Current: %.0f x real time", globalTimeScale);
+        float earthYearSeconds = 365.256f * 86400.0f / globalTimeScale;
+        ImGui::Text("Earth's year: %.1f seconds", earthYearSeconds);
+        
+        // Apply time scale
+        simSettings.timeScale = globalTimeScale;
+        for (auto* planet : planets) {
+            planet->setSimulationParams(simSettings);
+        }
+        
+        ImGui::End();
+    }
+    
+    // CAMERA & PLANET NAVIGATOR PANEL - Top Left
+    {
+        ImGui::SetNextWindowPos(ImVec2(10, 40), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(340, 0), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowBgAlpha(0.93f);
+        ImGui::Begin("Navigation & Camera", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+        
+        // CAMERA CONTROLS SECTION
+        ImGui::TextColored(ImVec4(0.8f, 0.9f, 1.0f, 1.0f), "Camera Controls");
+        ImGui::Separator();
+        ImGui::Spacing();
+        
+        // Speed display
+        ImGui::Text("Movement Speed:");
+        if (useLightSpeed) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "LIGHT SPEED");
+        } else if (useFastSpeed) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "FAST");
+        } else {
+            ImGui::SameLine();
+            ImGui::Text("Normal");
+        }
+        
+        ImGui::Spacing();
+        
+        // Camera tracking
+        ImGui::TextColored(ImVec4(0.7f, 0.8f, 0.9f, 1.0f), "Tracking:");
+        if (ImGui::Checkbox("Enable Tracking (T)", &cameraTrackingEnabled)) {
+            if (!cameraTrackingEnabled) {
+                trackedPlanet = nullptr;
+            }
+        }
+        
+        if (cameraTrackingEnabled) {
+            ImGui::Checkbox("Orbit Mode (F)", &cameraOrbitMode);
+            ImGui::SliderFloat("Distance", &cameraTrackDistance, 100.0f, 50000.0f, "%.0f px");
+            if (cameraOrbitMode) {
+                ImGui::SliderFloat("Orbit Speed", &cameraOrbitSpeed, 0.1f, 5.0f, "%.1f");
+            }
+            
+            if (trackedPlanet) {
+                ImGui::Text("Tracking: %s", trackedPlanet->getName().c_str());
+            }
+        }
+        
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+        
+        // PLANET NAVIGATOR SECTION
+        ImGui::TextColored(ImVec4(0.8f, 0.9f, 1.0f, 1.0f), "Planet Navigator");
+        ImGui::Separator();
+        ImGui::Spacing();
+        
+        static Planet* selectedPlanet = earth;
+        
+        // Planet selection buttons
+        for (auto* planet : planets) {
+            if (planet->getName() == "SkySphere") continue;
+            
+            bool isSelected = (selectedPlanet == planet);
+            bool isTracked = (trackedPlanet == planet);
+            
+            // Highlight tracked/selected planets
+            if (isTracked) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.3f, 0.5f, 1.0f));
+            } else if (isSelected) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.4f, 0.6f, 1.0f));
+            }
+            
+            std::string buttonLabel = planet->getName();
+            if (isTracked) buttonLabel += " [TRACKED]";
+            
+            if (ImGui::Button(buttonLabel.c_str(), ImVec2(160, 0))) {
+                selectedPlanet = planet;
+            }
+            
+            if (isTracked || isSelected) {
+                ImGui::PopStyleColor();
+            }
+            
+            // Show distance on same line
+            ImGui::SameLine();
+            float dist = glm::length(camera.Position - planet->getPosition());
+            ImGui::TextDisabled("%.0f px", dist);
+        }
+        
+        // Selected planet info
+        if (selectedPlanet) {
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+            
+            ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.3f, 1.0f), "%s", selectedPlanet->getName().c_str());
+            ImGui::Text("Diameter: %.0f km", selectedPlanet->getDiameterKM());
+            ImGui::Text("Orbital Period: %.1f days", selectedPlanet->getOrbitalPeriodDays());
+            
+            float distToPlanet = glm::length(camera.Position - selectedPlanet->getPosition());
+            ImGui::Text("Distance: %.0f px", distToPlanet);
+            
+            float lightTravelTime = distToPlanet / LIGHT_SPEED;
+            if (lightTravelTime < 60.0f) {
+                ImGui::TextDisabled("Light travel: %.1f sec", lightTravelTime);
+            } else {
+                ImGui::TextDisabled("Light travel: %.1f min", lightTravelTime / 60.0f);
+            }
+            
+            ImGui::Spacing();
+            
+            // Action buttons
+            if (ImGui::Button("Go to Planet", ImVec2(160, 30))) {
+                glm::vec3 targetPos = selectedPlanet->getPosition();
+                float planetRadius = selectedPlanet->getRadius();
+                cameraTrackDistance = planetRadius * 15.0f;
+                if (cameraTrackDistance < 500.0f) cameraTrackDistance = 500.0f;
+                camera.Position = targetPos + glm::vec3(0, 0, -cameraTrackDistance);
+            }
+            
+            ImGui::SameLine();
+            
+            if (cameraTrackingEnabled && trackedPlanet == selectedPlanet) {
+                if (ImGui::Button("Untrack", ImVec2(160, 30))) {
+                    trackedPlanet = nullptr;
+                    cameraTrackingEnabled = false;
+                }
+            } else {
+                if (ImGui::Button("Track This Planet", ImVec2(160, 30))) {
+                    trackedPlanet = selectedPlanet;
+                    cameraTrackingEnabled = true;
+                    float planetRadius = selectedPlanet->getRadius();
+                    cameraTrackDistance = planetRadius * 15.0f;
+                    if (cameraTrackDistance < 500.0f) cameraTrackDistance = 500.0f;
+                }
+            }
+        }
+        
+        ImGui::End();
+    }
+    
+    // EXIT CONFIRMATION DIALOG (Modal Popup)
+    if (showExitDialog) {
+        ImGui::OpenPopup("Exit Confirmation");
+        ImVec2 center = ImVec2(displayWidth * 0.5f, displayHeight * 0.5f);
+        ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        
+        if (ImGui::BeginPopupModal("Exit Confirmation", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Spacing();
+            
+            // Valhizen branding header
+            ImGui::TextColored(ImVec4(0.6f, 0.8f, 0.5f, 1.0f), "If the Moon Were Only One Pixel");
+            ImGui::TextColored(ImVec4(0.5f, 0.6f, 0.5f, 0.8f), "by valhizen");
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+            
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Leave the solar system?");
+            ImGui::Spacing();
+            ImGui::TextWrapped("Your journey through space will end.");
+            
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+            
+            float buttonWidth = 140.0f;
+            float totalWidth = buttonWidth * 2 + 10.0f;
+            float windowWidth = ImGui::GetWindowContentRegionMax().x;
+            ImGui::SetCursorPosX((windowWidth - totalWidth) * 0.5f);
+            
+            if (ImGui::Button("Exit", ImVec2(buttonWidth, 30))) {
+                glfwSetWindowShouldClose(m_Window, true);
+            }
+            
+            ImGui::SameLine();
+            
+            if (ImGui::Button("Continue Exploring", ImVec2(buttonWidth, 30))) {
+                showExitDialog = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SetItemDefaultFocus();
+            
+            ImGui::Spacing();
+            ImGui::EndPopup();
+        }
+    }
+    
+    // HUD STATUS BAR - Top of screen
+    {
+        ImGui::SetNextWindowPos(ImVec2(0, 0));
+        ImGui::SetNextWindowSize(ImVec2(displayWidth, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 6));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(10, 4));
+        ImGui::SetNextWindowBgAlpha(0.85f);
+        ImGui::Begin("##HUD", nullptr, 
+                    ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | 
+                    ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+                    ImGuiWindowFlags_NoSavedSettings);
+        
+        // Left side - System title
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "SOLAR SYSTEM EXPLORER");
+        ImGui::SameLine();
+        ImGui::TextDisabled("|");
+        ImGui::SameLine();
+        ImGui::Text("1px = 3,474.8 km");
+        
+        // Center-right - Speed and tracking
+        ImGui::SameLine(displayWidth - 650);
+        
+        // Speed indicator
+        if (useLightSpeed) {
+            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "LIGHT SPEED");
+        } else if (useFastSpeed) {
+            ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "FAST MODE");
+        } else {
+            ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "Normal Speed");
+        }
+        
+        ImGui::SameLine();
+        ImGui::TextDisabled("|");
+        ImGui::SameLine();
+        
+        // Tracking status
+        if (cameraTrackingEnabled && trackedPlanet) {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.8f, 1.0f), "Tracking: %s", 
+                             trackedPlanet->getName().c_str());
+            if (cameraOrbitMode) {
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.3f, 1.0f), "(Orbit)");
+            }
+        } else {
+            ImGui::TextDisabled("Free Camera");
+        }
+        
+        ImGui::SameLine();
+        ImGui::TextDisabled("|");
+        ImGui::SameLine();
+        
+        // Cursor state
+        if (cursorEnabled) {
+            ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "UI Mode");
+        } else {
+            ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "Flight Mode");
+        }
+        
+        ImGui::SameLine();
+        ImGui::TextDisabled("|");
+        ImGui::SameLine();
+        ImGui::Text("FPS: %.0f", 1.0f / deltaTime);
+        
+        ImGui::End();
+        ImGui::PopStyleVar(2);
+    }
+    
+    // HELP & CONTROLS PANEL - Bottom Left
+    if (showInfo) {
+        ImGui::SetNextWindowPos(ImVec2(10, displayHeight - 10), 
+                               ImGuiCond_Always, ImVec2(0.0f, 1.0f));
+        ImGui::SetNextWindowBgAlpha(0.93f);
+        ImGui::Begin("Controls & Help", &showInfo, ImGuiWindowFlags_AlwaysAutoResize);
+        
+        if (ImGui::CollapsingHeader("Keyboard Controls", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "Mode Toggle:");
+            ImGui::BulletText("TAB - Toggle UI/Flight mode");
+            ImGui::TextDisabled("  (UI mode: free cursor, Flight mode: locked cursor)");
+            
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "Movement (Flight Mode):");
+            ImGui::BulletText("W/A/S/D - Move camera");
+            ImGui::BulletText("Mouse - Look around");
+            ImGui::BulletText("Scroll - Zoom FOV");
+            
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.5f, 1.0f), "Speed:");
+            ImGui::BulletText("Shift - Fast mode (hold)");
+            ImGui::BulletText("C - Light speed toggle");
+            
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.8f, 1.0f), "Camera:");
+            ImGui::BulletText("T - Toggle tracking");
+            ImGui::BulletText("F - Toggle orbit mode");
+            
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(0.8f, 1.0f, 0.7f, 1.0f), "UI:");
+            ImGui::BulletText("/ - Quick search");
+            ImGui::BulletText("ESC - Exit dialog");
+        }
+        
+        if (ImGui::CollapsingHeader("Status")) {
+            ImGui::Spacing();
+            ImGui::Text("Camera: (%.0f, %.0f, %.0f)", 
+                       camera.Position.x, camera.Position.y, camera.Position.z);
+            
+            float distToSun = glm::length(camera.Position - sun->getPosition());
+            ImGui::Text("Sun distance: %.0f px", distToSun);
+            ImGui::Text("Earth distance: %.0f px", distToEarth);
+            
+            float lightTime = distToEarth / LIGHT_SPEED;
+            if (lightTime < 60.0f) {
+                ImGui::TextDisabled("Light: %.1f sec", lightTime);
+            } else {
+                ImGui::TextDisabled("Light: %.1f min", lightTime / 60.0f);
+            }
+        }
+        
+        if (ImGui::CollapsingHeader("Settings")) {
+            ImGui::Spacing();
+            ImGui::Checkbox("Planet Labels", &showPlanetLabels);
+            ImGui::Checkbox("Compass", &showCompass);
+            ImGui::Checkbox("Performance", &showPerformance);
+        }
+        
+        // Valhizen branding footer
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4(0.5f, 0.6f, 0.5f, 0.7f), "Created by valhizen");
+        ImGui::TextDisabled("Valkyrie + Kaizen = Continuous Improvement");
+        
+        ImGui::End();
+    }
 
     // Planet search dialog
     if (showSearchDialog) {
@@ -384,8 +1003,9 @@ skySphere->renderSphere(view, projection, camera.Position);
       ImGui::End();
     }
 
-    // Draw labels for visible planets
-    for (auto *planet : planets) {
+    // Draw labels for visible planets (only in flight mode)
+    if (showPlanetLabels && !cursorEnabled) {
+      for (auto *planet : planets) {
       glm::vec3 planetPos = planet->getPosition();
       float planetRadius = planet->getRadius();
       glm::vec3 labelPos = planetPos + glm::vec3(0.0f, planetRadius * 1.2f, 0.0f);
@@ -412,12 +1032,15 @@ skySphere->renderSphere(view, projection, camera.Position);
         ImGui::Text("Distance: %.0f px", distanceToPlanet);
         ImGui::End();
       }
+      }
     }
 
-    // Compass
-    ImGui::SetNextWindowPos(ImVec2(displayWidth - 310, 10), ImGuiCond_Always);
-    ImGui::SetNextWindowBgAlpha(0.8f);
-    ImGui::Begin("Planet Compass", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+    // Compass - Bottom right
+    if (showCompass) {
+      ImGui::SetNextWindowPos(ImVec2(displayWidth - 10, displayHeight - 10), 
+                             ImGuiCond_Always, ImVec2(1.0f, 1.0f));
+      ImGui::SetNextWindowBgAlpha(0.88f);
+      ImGui::Begin("Planet Compass", &showCompass, ImGuiWindowFlags_AlwaysAutoResize);
     ImGui::Text("Planet Directions:");
     ImGui::Separator();
 
@@ -446,64 +1069,18 @@ skySphere->renderSphere(view, projection, camera.Position);
                          forwardDir, rightDir, upDir);
     }
     ImGui::End();
-
-    // Performance window
-    ImGui::SetNextWindowPos(ImVec2(10, displayHeight - 120), ImGuiCond_Always);
-    ImGui::SetNextWindowBgAlpha(0.8f);
-    ImGui::Begin("Performance", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::Text("FPS: %.1f", 1.0f / deltaTime);
-    ImGui::Text("Frame Time: %.3f ms", deltaTime * 1000.0f);
-    ImGui::End();
-
-    // Info panel
-    ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowBgAlpha(0.8f);
-    ImGui::Begin("Info", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::Text("Scale: 1 pixel = Moon diameter (3,474.8 km)");
-    ImGui::Text("TRUE astronomical distances with REAL textures!");
-    ImGui::Separator();
-
-    ImGui::Text("Camera: (%.0f, %.0f, %.0f)", camera.Position.x,
-                camera.Position.y, camera.Position.z);
-
-    if (useLightSpeed) {
-      ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f),
-                         "Speed: LIGHT SPEED (%.2f px/s)", LIGHT_SPEED);
-    } else if (useFastSpeed) {
-      ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f),
-                         "Speed: FAST (%.0f px/s)", FAST_SPEED);
-    } else {
-      ImGui::Text("Speed: Normal (%.0f px/s)", NORMAL_SPEED);
     }
 
-    ImGui::Separator();
-    ImGui::Text("Real Distances from Sun:");
-    ImGui::Text("  Mercury: 16,666 px");
-    ImGui::Text("  Earth: 43,051 px");
-    ImGui::Text("  Jupiter: 224,050 px");
-    ImGui::Text("  Neptune: 1,293,488 px");
-
-    ImGui::Separator();
-    float distToSun = glm::length(camera.Position - sun->getPosition());
-    ImGui::Text("Your distance from Sun: %.0f px", distToSun);
-
-    ImGui::Separator();
-    ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f),
-                       "Distance to Earth: %.0f px", distToEarth);
-    ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f),
-                       "Travel time at light speed: %.1f seconds (%.1f min)",
-                       distToEarth / LIGHT_SPEED,
-                       (distToEarth / LIGHT_SPEED) / 60.0f);
-
-    ImGui::Separator();
-    ImGui::Text("Controls:");
-    ImGui::Text("  W/A/S/D: Move");
-    ImGui::Text("  Shift: Fast speed");
-    ImGui::Text("  C: Light speed toggle");
-    ImGui::Text("  /: Search planets");
-    ImGui::Text("  Mouse: Look around");
-
-    ImGui::End();
+    // Performance window (optional - FPS also in HUD)
+    if (showPerformance) {
+      ImGui::SetNextWindowPos(ImVec2(displayWidth / 2 - 75, displayHeight - 10), 
+                             ImGuiCond_Always, ImVec2(0.5f, 1.0f));
+      ImGui::SetNextWindowBgAlpha(0.88f);
+      ImGui::Begin("Performance", &showPerformance, ImGuiWindowFlags_AlwaysAutoResize);
+      ImGui::Text("FPS: %.1f", 1.0f / deltaTime);
+      ImGui::Text("Frame Time: %.3f ms", deltaTime * 1000.0f);
+      ImGui::End();
+    }
 
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

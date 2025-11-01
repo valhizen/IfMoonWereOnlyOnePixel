@@ -11,11 +11,12 @@
 #include <iostream>
 #include <algorithm>
 
-// Moon diameter as reference: 3,474.8 km
 const float MOON_DIAMETER_KM = 3474.8f;
-const float PIXELS_PER_MOON = 1.0f; // 1 pixel = moon diameter
-
-// In Planet.cpp, replace your constructor with this:
+const float PIXELS_PER_MOON = 1.0f;
+const float PI = 3.14159265359f;
+const float TWO_PI = 6.28318530718f;
+const float DEG_TO_RAD = PI / 180.0f;
+const float EARTH_DAYS_TO_SECONDS = 86400.0f;
 
 Planet::Planet(float diameterKM, std::string planetName, float zPosition, 
                glm::vec3 planetColor, const char* texturePath)
@@ -24,19 +25,37 @@ Planet::Planet(float diameterKM, std::string planetName, float zPosition,
       diameterInKM(diameterKM), 
       shader(nullptr), 
       inverted(false),
-      orbitParent(nullptr),    // CRITICAL: Initialize to nullptr
-      orbitRadius(0.0f),       // Initialize orbit parameters
-      orbitSpeed(0.0f),
-      orbitAngle(0.0f) {
+      orbitParent(nullptr),
+      orbitAngle(0.0f),
+      trueAnomaly(0.0f),
+      currentRotation(0.0f),
+      accumulatedTime(0.0f),
+      orbitVAO(0),
+      orbitVBO(0) {
 
-    // Convert diameter to radius in pixels
     float diameterInPixels = (diameterKM / MOON_DIAMETER_KM) * PIXELS_PER_MOON;
     radius = diameterInPixels / 2.0f;
-
     mass = (diameterKM * diameterKM * diameterKM) / 1000.0f;
-    
-    // Position: planets go further in -Z (away from camera)
     position = glm::vec3(0.0f, 0.0f, zPosition);
+    
+    // Initialize default parameters
+    orbitalParams = {0, 0, 0, 0, 0, 0, 0};
+    
+    rotationParams.rotationPeriodHours = 24.0f;
+    rotationParams.axialTiltDeg = 0.0f;
+    rotationParams.initialRotationDeg = 0.0f;
+    
+    visualParams.radiusScale = 1.0f;
+    visualParams.emissiveStrength = 0.0f;
+    visualParams.emissiveColor = glm::vec3(0.0f);
+    visualParams.showOrbitPath = false;
+    visualParams.orbitPathColor = glm::vec3(0.5f, 0.5f, 0.5f);
+    visualParams.orbitSegments = 128;
+    
+    simParams.timeScale = 1.0f;
+    simParams.usePhysicalOrbits = true;
+    simParams.pauseOrbit = false;
+    simParams.pauseRotation = false;
     
     try {
         if (name == "SkySphere") {
@@ -45,22 +64,186 @@ Planet::Planet(float diameterKM, std::string planetName, float zPosition,
         } else {
             shader = new Shader("shader/shader.vert", "shader/shader.frag");
         }
-        
-        if (shader == nullptr) {
-            throw std::runtime_error("Failed to create shader for " + name);
-        }
     } catch (const std::exception& e) {
         std::cerr << "Error creating shader for " << name << ": " << e.what() << std::endl;
         throw;
     }
     
-    if (texturePath != nullptr) {
-        textureID = loadTexture(texturePath);
-    } else {
-        textureID = 0;
+    textureID = (texturePath != nullptr) ? loadTexture(texturePath) : 0;
+    GenerateSphere();
+}
+
+void Planet::setOrbit(Planet* parent, const OrbitalParams& params) {
+    orbitParent = parent;
+    orbitalParams = params;
+    
+    // Convert semi-major axis from km to pixels
+    float orbitRadiusPixels = (params.semiMajorAxisKM / MOON_DIAMETER_KM) * PIXELS_PER_MOON;
+    
+    // Initialize starting position based on mean anomaly
+    orbitAngle = params.meanAnomalyDeg * DEG_TO_RAD;
+    
+    // CRITICAL: Calculate and set initial orbital position
+    position = calculateOrbitalPosition();
+    
+    if (visualParams.showOrbitPath) {
+        GenerateOrbitPath();
+    }
+}
+
+void Planet::setOrbitParent(Planet* parent, float orbitRad, float orbitSpd) {
+    orbitParent = parent;
+    
+    // Create simple circular orbit parameters
+    orbitalParams.semiMajorAxisKM = orbitRad * MOON_DIAMETER_KM;
+    orbitalParams.eccentricity = 0.0f;
+    orbitalParams.inclinationDeg = 0.0f;
+    orbitalParams.longitudeAscNodeDeg = 0.0f;
+    orbitalParams.argPeriapsisDeg = 0.0f;
+    orbitalParams.meanAnomalyDeg = 0.0f;
+    
+    // Calculate period from speed or use Kepler's 3rd law
+    if (orbitSpd > 0.0f) {
+        float angularVelocityRadPerSec = orbitSpd;
+        float periodSeconds = TWO_PI / angularVelocityRadPerSec;
+        orbitalParams.orbitalPeriodDays = periodSeconds / EARTH_DAYS_TO_SECONDS;
+    } else if (parent != nullptr) {
+        // Use simplified Kepler's 3rd law: T² ∝ a³
+        const float EARTH_PERIOD_DAYS = 365.256f;
+        const float EARTH_DISTANCE_KM = 149600000.0f;
+        float ratio = orbitalParams.semiMajorAxisKM / EARTH_DISTANCE_KM;
+        orbitalParams.orbitalPeriodDays = EARTH_PERIOD_DAYS * std::pow(ratio, 1.5f);
     }
     
-    GenerateSphere();
+    // Calculate and set initial orbital position
+    orbitAngle = 0.0f;
+    position = calculateOrbitalPosition();
+}
+
+void Planet::setRotation(const RotationParams& params) {
+    rotationParams = params;
+    currentRotation = params.initialRotationDeg * DEG_TO_RAD;
+}
+
+void Planet::setVisualParams(const VisualParams& params) {
+    visualParams = params;
+    if (params.showOrbitPath && orbitParent != nullptr) {
+        GenerateOrbitPath();
+    }
+}
+
+void Planet::setSimulationParams(const SimulationParams& params) {
+    simParams = params;
+}
+
+// Solve Kepler's equation: M = E - e*sin(E) for eccentric anomaly E
+float Planet::solveKeplerEquation(float M, float e, int maxIter) {
+    float E = M; // Initial guess
+    for (int i = 0; i < maxIter; i++) {
+        float dE = (E - e * std::sin(E) - M) / (1.0f - e * std::cos(E));
+        E -= dE;
+        if (std::abs(dE) < 1e-6f) break;
+    }
+    return E;
+}
+
+glm::vec3 Planet::calculateOrbitalPosition() {
+    if (orbitParent == nullptr) {
+        return position;
+    }
+    
+    float a = (orbitalParams.semiMajorAxisKM / MOON_DIAMETER_KM) * PIXELS_PER_MOON;
+    float e = orbitalParams.eccentricity;
+    
+    if (simParams.usePhysicalOrbits && e > 0.001f) {
+        // Elliptical orbit using Kepler's laws
+        float E = solveKeplerEquation(orbitAngle, e);
+        
+        // Calculate true anomaly from eccentric anomaly
+        trueAnomaly = 2.0f * std::atan2(
+            std::sqrt(1.0f + e) * std::sin(E / 2.0f),
+            std::sqrt(1.0f - e) * std::cos(E / 2.0f)
+        );
+        
+        // Distance from focus (parent body)
+        float r = a * (1.0f - e * std::cos(E));
+        
+        // Position in orbital plane
+        float x = r * std::cos(trueAnomaly);
+        float y = r * std::sin(trueAnomaly);
+        
+        // Apply orbital element rotations
+        glm::vec3 orbitalPos(x, 0.0f, y);
+        
+        // Rotate by argument of periapsis
+        float w = orbitalParams.argPeriapsisDeg * DEG_TO_RAD;
+        glm::mat4 rotW = glm::rotate(glm::mat4(1.0f), w, glm::vec3(0, 1, 0));
+        
+        // Rotate by inclination
+        float i = orbitalParams.inclinationDeg * DEG_TO_RAD;
+        glm::mat4 rotI = glm::rotate(glm::mat4(1.0f), i, glm::vec3(1, 0, 0));
+        
+        // Rotate by longitude of ascending node
+        float omega = orbitalParams.longitudeAscNodeDeg * DEG_TO_RAD;
+        glm::mat4 rotOmega = glm::rotate(glm::mat4(1.0f), omega, glm::vec3(0, 1, 0));
+        
+        glm::vec4 finalPos = rotOmega * rotI * rotW * glm::vec4(orbitalPos, 1.0f);
+        return orbitParent->getPosition() + glm::vec3(finalPos);
+        
+    } else {
+        // Simple circular orbit
+        float x = a * std::cos(orbitAngle);
+        float z = a * std::sin(orbitAngle);
+        
+        // Apply inclination for circular orbits
+        float i = orbitalParams.inclinationDeg * DEG_TO_RAD;
+        float y = z * std::sin(i);
+        z = z * std::cos(i);
+        
+        return orbitParent->getPosition() + glm::vec3(x, y, z);
+    }
+}
+
+void Planet::update(float deltaTime) {
+    if (orbitParent == nullptr) return;
+    
+    float scaledDelta = deltaTime * simParams.timeScale;
+    accumulatedTime += scaledDelta;
+    
+    // Update orbital position
+    if (!simParams.pauseOrbit && orbitalParams.orbitalPeriodDays > 0.0f) {
+        float periodSeconds = orbitalParams.orbitalPeriodDays * EARTH_DAYS_TO_SECONDS;
+        float angularVelocity = TWO_PI / periodSeconds;
+        orbitAngle += angularVelocity * scaledDelta;
+        
+        // Keep in range [0, 2π]
+        while (orbitAngle > TWO_PI) orbitAngle -= TWO_PI;
+        while (orbitAngle < 0) orbitAngle += TWO_PI;
+        
+        position = calculateOrbitalPosition();
+    }
+    
+    // Update axial rotation
+    if (!simParams.pauseRotation && rotationParams.rotationPeriodHours > 0.0f) {
+        float rotPeriodSeconds = rotationParams.rotationPeriodHours * 3600.0f;
+        float rotAngularVelocity = TWO_PI / rotPeriodSeconds;
+        currentRotation += rotAngularVelocity * scaledDelta;
+        
+        while (currentRotation > TWO_PI) currentRotation -= TWO_PI;
+    }
+}
+
+glm::mat4 Planet::getRotationMatrix() {
+    glm::mat4 rot = glm::mat4(1.0f);
+    
+    // Apply axial tilt
+    float tilt = rotationParams.axialTiltDeg * DEG_TO_RAD;
+    rot = glm::rotate(rot, tilt, glm::vec3(0, 0, 1));
+    
+    // Apply rotation
+    rot = glm::rotate(rot, currentRotation, glm::vec3(0, 1, 0));
+    
+    return rot;
 }
 
 void Planet::GenerateSphere() {
@@ -71,25 +254,22 @@ void Planet::GenerateSphere() {
     
     const unsigned int X_SEGMENTS = 64;
     const unsigned int Y_SEGMENTS = 64;
-    const float PI = 3.14159265359f;
     
-    // Generate vertices
     for (unsigned int y = 0; y <= Y_SEGMENTS; ++y) {
         for (unsigned int x = 0; x <= X_SEGMENTS; ++x) {
             float xSegment = (float)x / (float)X_SEGMENTS;
             float ySegment = (float)y / (float)Y_SEGMENTS;
             
-            float xPos = cos(xSegment * 2.0f * PI) * sin(ySegment * PI);
+            float xPos = cos(xSegment * TWO_PI) * sin(ySegment * PI);
             float yPos = cos(ySegment * PI);
-            float zPos = sin(xSegment * 2.0f * PI) * sin(ySegment * PI);
+            float zPos = sin(xSegment * TWO_PI) * sin(ySegment * PI);
             
             positions.push_back(glm::vec3(xPos, yPos, zPos));
-            normals.push_back(glm::vec3(xPos, yPos, zPos)); // Normal = normalized position for sphere
-            uv.push_back(glm::vec2(xSegment, ySegment)); // Generate UV coordinates
+            normals.push_back(glm::vec3(xPos, yPos, zPos));
+            uv.push_back(glm::vec2(xSegment, ySegment));
         }
     }
     
-    // Generate indices
     for (unsigned int y = 0; y < Y_SEGMENTS; ++y) {
         for (unsigned int x = 0; x < X_SEGMENTS; ++x) {
             indices.push_back(y * (X_SEGMENTS + 1) + x);
@@ -104,17 +284,14 @@ void Planet::GenerateSphere() {
     
     indexCount = static_cast<unsigned int>(indices.size());
     
-    // Flatten data: position (3) + normal (3) + uv (2)
     std::vector<float> data;
     for (unsigned int i = 0; i < positions.size(); ++i) {
         data.push_back(positions[i].x);
         data.push_back(positions[i].y);
         data.push_back(positions[i].z);
-        
         data.push_back(normals[i].x);
         data.push_back(normals[i].y);
         data.push_back(normals[i].z);
-        
         data.push_back(uv[i].x);
         data.push_back(uv[i].y);
     }
@@ -124,41 +301,99 @@ void Planet::GenerateSphere() {
     glGenBuffers(1, &ebo);
     
     glBindVertexArray(sphereVAO);
-    
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(float), &data[0], GL_STATIC_DRAW);
-    
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), &indices[0], GL_STATIC_DRAW);
     
-    unsigned int stride = 8 * sizeof(float); // 3 pos + 3 normal + 2 uv
-    
-    // Position attribute
+    unsigned int stride = 8 * sizeof(float);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0);
-    
-    // Normal attribute
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, (void*)(3 * sizeof(float)));
-    
-    // UV attribute
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride, (void*)(6 * sizeof(float)));
     
     glBindVertexArray(0);
 }
 
+void Planet::GenerateOrbitPath() {
+    if (orbitParent == nullptr) return;
+    
+    std::vector<glm::vec3> orbitPoints;
+    int segments = visualParams.orbitSegments;
+    float a = (orbitalParams.semiMajorAxisKM / MOON_DIAMETER_KM) * PIXELS_PER_MOON;
+    float e = orbitalParams.eccentricity;
+    
+    // Prepare rotation matrices (same as in calculateOrbitalPosition)
+    float w = orbitalParams.argPeriapsisDeg * DEG_TO_RAD;
+    float inc = orbitalParams.inclinationDeg * DEG_TO_RAD;
+    float omega = orbitalParams.longitudeAscNodeDeg * DEG_TO_RAD;
+    
+    glm::mat4 rotW = glm::rotate(glm::mat4(1.0f), w, glm::vec3(0, 1, 0));
+    glm::mat4 rotI = glm::rotate(glm::mat4(1.0f), inc, glm::vec3(1, 0, 0));
+    glm::mat4 rotOmega = glm::rotate(glm::mat4(1.0f), omega, glm::vec3(0, 1, 0));
+    glm::mat4 fullRotation = rotOmega * rotI * rotW;
+    
+    for (int i = 0; i <= segments; i++) {
+        float angle = (float)i / segments * TWO_PI;
+        glm::vec3 orbitalPos;
+        
+        if (e > 0.001f) {
+            // Elliptical path
+            float E = solveKeplerEquation(angle, e);
+            float r = a * (1.0f - e * std::cos(E));
+            float nu = 2.0f * std::atan2(std::sqrt(1.0f + e) * std::sin(E / 2.0f),
+                                         std::sqrt(1.0f - e) * std::cos(E / 2.0f));
+            
+            float x = r * std::cos(nu);
+            float y = r * std::sin(nu);
+            orbitalPos = glm::vec3(x, 0.0f, y);
+        } else {
+            // Circular path
+            float x = a * std::cos(angle);
+            float z = a * std::sin(angle);
+            orbitalPos = glm::vec3(x, 0.0f, z);
+        }
+        
+        // Apply the same rotations as calculateOrbitalPosition
+        glm::vec4 rotatedPos = fullRotation * glm::vec4(orbitalPos, 1.0f);
+        orbitPoints.push_back(glm::vec3(rotatedPos));
+    }
+    
+    glGenVertexArrays(1, &orbitVAO);
+    glGenBuffers(1, &orbitVBO);
+    glBindVertexArray(orbitVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, orbitVBO);
+    glBufferData(GL_ARRAY_BUFFER, orbitPoints.size() * sizeof(glm::vec3), 
+                 &orbitPoints[0], GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+    glBindVertexArray(0);
+}
+
+void Planet::renderOrbitPath(const glm::mat4& view, const glm::mat4& projection) {
+    if (!visualParams.showOrbitPath || orbitVAO == 0 || orbitParent == nullptr) return;
+    
+    shader->use();
+    glm::mat4 model = glm::translate(glm::mat4(1.0f), orbitParent->getPosition());
+    shader->setMat4("model", model);
+    shader->setMat4("view", view);
+    shader->setMat4("projection", projection);
+    shader->setVec3("objectColor", visualParams.orbitPathColor);
+    shader->setBool("useTexture", false);
+    
+    glBindVertexArray(orbitVAO);
+    glDrawArrays(GL_LINE_LOOP, 0, visualParams.orbitSegments + 1);
+    glBindVertexArray(0);
+}
+
 void Planet::renderSphere(const glm::mat4& view, const glm::mat4& projection, 
                           glm::vec3 campos) {
-    // Add null check for safety
-    if (shader == nullptr) {
-        std::cerr << "Error: Shader is null for planet " << name << std::endl;
-        return;
-    }
+    if (shader == nullptr) return;
     
     shader->use();
     
-    // Bind texture if available
     if (textureID != 0) {
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, textureID);
@@ -170,19 +405,18 @@ void Planet::renderSphere(const glm::mat4& view, const glm::mat4& projection,
     
     glm::mat4 model = glm::mat4(1.0f);
     model = glm::translate(model, position);
-    model = glm::scale(model, glm::vec3(radius));
+    model = model * getRotationMatrix();
+    model = glm::scale(model, glm::vec3(radius * visualParams.radiusScale));
     
     shader->setMat4("model", model);
     shader->setMat4("view", view);
     shader->setMat4("projection", projection);
     shader->setVec3("viewPos", campos);
-    shader->setFloat("time", (float)glfwGetTime());
+    shader->setFloat("time", accumulatedTime);
     shader->setVec3("objectColor", color);
     
-    if (inverted)
-        glFrontFace(GL_CW);
-    else
-        glFrontFace(GL_CCW);
+    if (inverted) glFrontFace(GL_CW);
+    else glFrontFace(GL_CCW);
         
     glBindVertexArray(sphereVAO);
     glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0);
@@ -190,135 +424,149 @@ void Planet::renderSphere(const glm::mat4& view, const glm::mat4& projection,
     glFrontFace(GL_CCW);
 }
 
-glm::vec3 Planet::getPosition() const {
-    return position;
+// Getters implementation
+glm::vec3 Planet::getPosition() const { return position; }
+std::string Planet::getName() const { return name; }
+float Planet::getRadius() const { return radius * visualParams.radiusScale; }
+float Planet::getDiameterKM() const { return diameterInKM; }
+float Planet::getTrueAnomaly() const { return trueAnomaly; }
+float Planet::getMeanAnomaly() const { return orbitAngle; }
+
+float Planet::getDistanceFromParent() const {
+    if (orbitParent == nullptr) return 0.0f;
+    return glm::length(position - orbitParent->getPosition());
 }
 
-std::string Planet::getName() const {
-    return name;
+float Planet::getOrbitalVelocity() const {
+    if (orbitalParams.orbitalPeriodDays <= 0.0f) return 0.0f;
+    float a = (orbitalParams.semiMajorAxisKM / MOON_DIAMETER_KM) * PIXELS_PER_MOON;
+    float periodSeconds = orbitalParams.orbitalPeriodDays * EARTH_DAYS_TO_SECONDS;
+    return TWO_PI * a / periodSeconds;
 }
 
-float Planet::getRadius() const {
-    return radius;
+void Planet::setPosition(const glm::vec3& pos) { position = pos; }
+void Planet::setTimeScale(float scale) { simParams.timeScale = scale; }
+void Planet::setRadiusScale(float scale) { visualParams.radiusScale = scale; }
+
+void Planet::resetOrbit() {
+    orbitAngle = orbitalParams.meanAnomalyDeg * DEG_TO_RAD;
+    currentRotation = rotationParams.initialRotationDeg * DEG_TO_RAD;
+    accumulatedTime = 0.0f;
+    position = calculateOrbitalPosition();
 }
 
-float Planet::getDiameterKM() const {
-    return diameterInKM;
+unsigned int Planet::loadTexture(const char* path) {
+    // [Same as before - texture loading code]
+    std::string filePath = path;
+    unsigned int textureID;
+    glGenTextures(1, &textureID);
+    
+    std::string ext;
+    size_t dotPos = filePath.find_last_of('.');
+    if (dotPos != std::string::npos)
+        ext = filePath.substr(dotPos + 1);
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+    
+    if (ext == "tif" || ext == "tiff") {
+        readTiffImage(const_cast<char*>(filePath.c_str()), &textureID);
+        return textureID;
+    }
+    
+    int width, height, nrComponents;
+    unsigned char* data = stbi_load(path, &width, &height, &nrComponents, 0);
+    if (data) {
+        GLenum format = (nrComponents == 1) ? GL_RED : 
+                       (nrComponents == 3) ? GL_RGB : GL_RGBA;
+        glBindTexture(GL_TEXTURE_2D, textureID);
+        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format,
+                     GL_UNSIGNED_BYTE, data);
+        glGenerateMipmap(GL_TEXTURE_2D);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        stbi_image_free(data);
+    } else {
+        std::cerr << "Texture failed to load at path: " << path << std::endl;
+        stbi_image_free(data);
+    }
+    return textureID;
 }
 
 Planet::~Planet() {
     glDeleteVertexArrays(1, &sphereVAO);
     glDeleteBuffers(1, &vbo);
     glDeleteBuffers(1, &ebo);
-    if (shader != nullptr) {
-        delete shader;
+    if (orbitVAO) {
+        glDeleteVertexArrays(1, &orbitVAO);
+        glDeleteBuffers(1, &orbitVBO);
     }
+    if (shader != nullptr) delete shader;
 }
 
-unsigned int Planet::loadTexture(const char* path)
-{
-    std::string filePath = path;
-    unsigned int textureID;
-    glGenTextures(1, &textureID);
-
-    // Detect file extension
-    std::string ext;
-    size_t dotPos = filePath.find_last_of('.');
-    if (dotPos != std::string::npos)
-        ext = filePath.substr(dotPos + 1);
-
-    // Convert to lowercase for safety
-    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-
-    if (ext == "tif" || ext == "tiff") {
-        // --- Load TIFF using libtiff ---
-        std::cout << "Loading TIFF texture: " << filePath << std::endl;
-        readTiffImage(const_cast<char*>(filePath.c_str()), &textureID);
-        return textureID;
-    }
-
-    // --- Default: use stb_image ---
-    int width, height, nrComponents;
-    unsigned char* data = stbi_load(path, &width, &height, &nrComponents, 0);
-    if (data)
-    {
-        GLenum format;
-        if (nrComponents == 1)
-            format = GL_RED;
-        else if (nrComponents == 3)
-            format = GL_RGB;
-        else if (nrComponents == 4)
-            format = GL_RGBA;
-        else
-            format = GL_RGB;
-
-        glBindTexture(GL_TEXTURE_2D, textureID);
-        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format,
-                     GL_UNSIGNED_BYTE, data);
-        glGenerateMipmap(GL_TEXTURE_2D);
-
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-        stbi_image_free(data);
-    }
-    else
-    {
-        std::cerr << "Texture failed to load at path: " << path << std::endl;
-        stbi_image_free(data);
-    }
-
-    return textureID;
-}
-
-// Set orbital parameters
-void Planet::setOrbitParent(Planet* parent, float orbitRad, float orbitSpd) {
-    orbitParent = parent;
-    orbitRadius = orbitRad;
-    
-    // If orbit speed not specified, calculate from gravitational physics
-    if (orbitSpd == 0.0f && parent != nullptr) {
-        // Simplified orbital velocity: v = sqrt(G*M/r)
-        // We use a scaled G constant for our simulation
-        const float G_SCALED = 100.0f; // Tuned for visual effect
-        float v = std::sqrt(G_SCALED * parent->getMass() / orbitRadius);
-        
-        // Convert linear velocity to angular velocity: ω = v/r
-        orbitSpeed = v / orbitRadius;
-    } else {
-        orbitSpeed = orbitSpd;
+// REAL PLANET PRESETS
+namespace PlanetPresets {
+    Planet::OrbitalParams getEarthOrbit() {
+        return {149598023.0f, 0.0167f, 365.256f, 0.0f, 0.0f, 102.9f, 0.0f};
     }
     
-    // Start at a random angle for variety
-    orbitAngle = 0.0f;
-}
-// Update planet position based on orbit
-// Update planet position based on orbit
-void Planet::update(float deltaTime) {
-    // CRITICAL: Only update if this planet has an orbit parent
-    if (orbitParent == nullptr) {
-        return; // Static body (like the Sun) - don't move
+    Planet::OrbitalParams getMercuryOrbit() {
+        return {57909050.0f, 0.2056f, 87.97f, 7.0f, 48.3f, 29.1f, 0.0f};
     }
     
-    // Increment orbital angle
-    orbitAngle += orbitSpeed * deltaTime;
-    
-    // Keep angle in [0, 2π] range for numerical stability
-    const float TWO_PI = 6.28318530718f;
-    if (orbitAngle > TWO_PI) {
-        orbitAngle -= TWO_PI;
+    Planet::OrbitalParams getVenusOrbit() {
+        return {108208000.0f, 0.0068f, 224.7f, 3.4f, 76.7f, 54.9f, 0.0f};
     }
     
-    // Calculate position in orbital plane (XZ plane by default)
-    float x = orbitRadius * std::cos(orbitAngle);
-    float z = orbitRadius * std::sin(orbitAngle);
+    Planet::OrbitalParams getMarsOrbit() {
+        return {227939200.0f, 0.0934f, 686.98f, 1.85f, 49.6f, 286.5f, 0.0f};
+    }
     
-    // Position in orbit relative to parent
-    glm::vec3 orbitPos(x, 0.0f, z);
+    Planet::OrbitalParams getJupiterOrbit() {
+        return {778570000.0f, 0.0489f, 4332.59f, 1.3f, 100.5f, 273.9f, 0.0f};
+    }
     
-    // Add parent's position to get world position
-    // This allows nested orbits (Moon follows Earth, Earth follows Sun)
-    position = orbitParent->getPosition() + orbitPos;
+    Planet::OrbitalParams getSaturnOrbit() {
+        return {1433530000.0f, 0.0565f, 10759.22f, 2.5f, 113.7f, 339.4f, 0.0f};
+    }
+    
+    Planet::OrbitalParams getUranusOrbit() {
+        return {2875040000.0f, 0.0457f, 30688.5f, 0.77f, 74.0f, 96.6f, 0.0f};
+    }
+    
+    Planet::OrbitalParams getNeptuneOrbit() {
+        return {4504450000.0f, 0.0113f, 60182.0f, 1.77f, 131.8f, 276.3f, 0.0f};
+    }
+    
+    Planet::RotationParams getEarthRotation() {
+        return {24.0f, 23.44f, 0.0f};
+    }
+    
+    Planet::RotationParams getMercuryRotation() {
+        return {1407.6f, 0.03f, 0.0f};
+    }
+    
+    Planet::RotationParams getVenusRotation() {
+        return {-5832.5f, 177.4f, 0.0f}; // Negative = retrograde
+    }
+    
+    Planet::RotationParams getMarsRotation() {
+        return {24.6f, 25.19f, 0.0f};
+    }
+    
+    Planet::RotationParams getJupiterRotation() {
+        return {9.9f, 3.13f, 0.0f};
+    }
+    
+    Planet::RotationParams getSaturnRotation() {
+        return {10.7f, 26.73f, 0.0f};
+    }
+    
+    Planet::RotationParams getUranusRotation() {
+        return {-17.2f, 97.77f, 0.0f}; // Retrograde, extreme tilt
+    }
+    
+    Planet::RotationParams getNeptuneRotation() {
+        return {16.1f, 28.32f, 0.0f};
+    }
 }
