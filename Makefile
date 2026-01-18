@@ -39,7 +39,10 @@ MY_SRCS := $(SRC_DIR)/main.cpp \
 						$(SRC_DIR)/Planet.cpp \
 						$(SRC_DIR)/Shader.cpp \
 						$(SRC_DIR)/Camera.cpp \
-						$(SRC_DIR)/readTexture.cpp
+						$(SRC_DIR)/readTexture.cpp \
+						$(SRC_DIR)/Cockpit.cpp \
+						$(SRC_DIR)/AudioSystem.cpp \
+						$(SRC_DIR)/VideoPlayer.cpp
 
 
 

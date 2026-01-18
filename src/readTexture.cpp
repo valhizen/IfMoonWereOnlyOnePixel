@@ -96,5 +96,48 @@ int readTiffImage(const char *filename, unsigned int *outTextureID)
     TIFFClose(tif);
 
     std::cout << "TIFF successfully uploaded to GPU!\n";
+
     return 1;
+}
+
+
+#include <stb_image.h>
+#include <string>
+#include <algorithm>
+
+unsigned int loadTexture(const char* path) {
+    std::string filePath = path;
+    unsigned int textureID;
+    glGenTextures(1, &textureID);
+    
+    std::string ext;
+    size_t dotPos = filePath.find_last_of('.');
+    if (dotPos != std::string::npos)
+        ext = filePath.substr(dotPos + 1);
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+    
+    if (ext == "tif" || ext == "tiff") {
+        readTiffImage(const_cast<char*>(filePath.c_str()), &textureID);
+        return textureID;
+    }
+    
+    int width, height, nrComponents;
+    unsigned char* data = stbi_load(path, &width, &height, &nrComponents, 0);
+    if (data) {
+        GLenum format = (nrComponents == 1) ? GL_RED : 
+                       (nrComponents == 3) ? GL_RGB : GL_RGBA;
+        glBindTexture(GL_TEXTURE_2D, textureID);
+        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format,
+                     GL_UNSIGNED_BYTE, data);
+        glGenerateMipmap(GL_TEXTURE_2D);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        stbi_image_free(data);
+    } else {
+        std::cerr << "Texture failed to load at path: " << path << std::endl;
+        stbi_image_free(data);
+    }
+    return textureID;
 }

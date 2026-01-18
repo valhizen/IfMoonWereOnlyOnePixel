@@ -1,9 +1,12 @@
+#include <iostream>
 #include "Application.hpp"
 #include "Camera.hpp"
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
+#include "imgui_impl_opengl3.h"
 #include "ImGuiStyle.hpp"
+#include "Cockpit.hpp"
 #include "Planet.hpp"
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -48,15 +51,46 @@ bool showSearchDialog = false;
 char searchBuffer[256] = "";
 bool searchJustOpened = false;
 
+// Light speed travel animation
+bool lightTravelActive = false;
+Planet* lightTravelFrom = nullptr;
+Planet* lightTravelTo = nullptr;
+glm::vec3 lightTravelStartPos;
+glm::vec3 lightTravelEndPos;
+float lightTravelProgress = 0.0f;
+float lightTravelElapsedTime = 0.0f;
+float lightTravelTotalDistance = 0.0f;
+
+// View State
+bool showCockpit = true;
+void ApplyCockpitTheme();
+void ApplySimpleTheme();
+
+// Audio System
+#include "AudioSystem.hpp"
+AudioSystem* audioSystem = nullptr;
+
+// Video Player
+#include "VideoPlayer.hpp"
+VideoPlayer* videoPlayer = nullptr;
+bool showLaunchSequence = true;
+bool playingLaunch = false;
+
 void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
   glViewport(0, 0, width, height);
 }
 
 void processInput(GLFWwindow *window) {
-  // Escape key now shows exit confirmation
+  // Escape key handling
   static bool escKeyPressed = false;
   if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS && !escKeyPressed) {
-    showExitDialog = true;
+    if (showSearchDialog) {
+      showSearchDialog = false; // Close search if open
+    } else if (showExitDialog) {
+        showExitDialog = false; // Close exit dialog if open
+    } else {
+      showExitDialog = true;    // Show exit dialog
+    }
     escKeyPressed = true;
   }
   if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_RELEASE) {
@@ -66,11 +100,13 @@ void processInput(GLFWwindow *window) {
   // Toggle search dialog with / key
   static bool slashKeyPressed = false;
   if (glfwGetKey(window, GLFW_KEY_SLASH) == GLFW_PRESS && !slashKeyPressed) {
-    showSearchDialog = !showSearchDialog;
-    if (showSearchDialog) {
-      searchBuffer[0] = '\0';
-      searchJustOpened = true;
+    if (!showSearchDialog) {
+        // Only open if not already open
+        showSearchDialog = true;
+        searchBuffer[0] = '\0';
+        searchJustOpened = true;
     }
+    // If already open, do nothing here (allow typing / in the box)
     slashKeyPressed = true;
   }
   if (glfwGetKey(window, GLFW_KEY_SLASH) == GLFW_RELEASE) {
@@ -80,16 +116,30 @@ void processInput(GLFWwindow *window) {
   // Toggle light speed with C key
   static bool cKeyPressed = false;
   if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS && !cKeyPressed) {
-    useLightSpeed = !useLightSpeed;
-    if (useLightSpeed) {
-      cameraSpeedMultiplier = LIGHT_SPEED;
-    } else {
-      cameraSpeedMultiplier = useFastSpeed ? FAST_SPEED : NORMAL_SPEED;
+    if (!lightTravelActive) {
+         useLightSpeed = !useLightSpeed;
+         if (useLightSpeed) {
+           cameraSpeedMultiplier = LIGHT_SPEED;
+         } else {
+           cameraSpeedMultiplier = useFastSpeed ? FAST_SPEED : NORMAL_SPEED;
+         }
     }
     cKeyPressed = true;
   }
   if (glfwGetKey(window, GLFW_KEY_C) == GLFW_RELEASE) {
     cKeyPressed = false;
+  }
+
+  // Toggle Cockpit View with V key
+  static bool vKeyPressed = false;
+  if (glfwGetKey(window, GLFW_KEY_V) == GLFW_PRESS && !vKeyPressed) {
+      showCockpit = !showCockpit;
+      if (showCockpit) ApplyCockpitTheme();
+      else ApplySimpleTheme();
+      vKeyPressed = true;
+  }
+  if (glfwGetKey(window, GLFW_KEY_V) == GLFW_RELEASE) {
+      vKeyPressed = false;
   }
 
   // Toggle camera tracking with T key
@@ -258,6 +308,48 @@ Application::Application(int width, int height, const char *title)
 
   cameraSpeedMultiplier = NORMAL_SPEED;
   camera.MovementSpeed = NORMAL_SPEED;
+  
+  // Initialize Cockpit
+  m_Cockpit = new Cockpit();
+  m_Cockpit->init();
+  
+  // Initialize Audio
+  audioSystem = new AudioSystem();
+  if (audioSystem->init()) {
+      audioSystem->loadSounds();
+  }
+  
+  // Initialize Video
+  videoPlayer = new VideoPlayer();
+  if (videoPlayer->load("assets/launch_video.mpg")) {
+      if (showLaunchSequence) {
+          playingLaunch = true;
+          // Defer audio play until loop starts or play here?
+          // Play here is fine if context active
+      }
+  }
+
+  // Sci-Fi Theme (Default)
+  ApplyCockpitTheme();
+}
+
+void ApplyCockpitTheme() {
+  ImGuiStyle& style = ImGui::GetStyle();
+  style.Colors[ImGuiCol_WindowBg] = ImVec4(0.02f, 0.05f, 0.1f, 0.5f);
+  style.Colors[ImGuiCol_Border] = ImVec4(0.0f, 0.8f, 1.0f, 0.6f);
+  style.Colors[ImGuiCol_TitleBg] = ImVec4(0.02f, 0.05f, 0.1f, 0.9f);
+  style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.0f, 0.4f, 0.6f, 0.8f);
+  style.Colors[ImGuiCol_Text] = ImVec4(0.8f, 0.95f, 1.0f, 1.0f);
+  style.Colors[ImGuiCol_Button] = ImVec4(0.0f, 0.4f, 0.6f, 0.4f);
+  style.Colors[ImGuiCol_Header] = ImVec4(0.0f, 0.4f, 0.6f, 0.4f);
+  style.WindowRounding = 2.0f;
+  style.FrameRounding = 2.0f;
+}
+
+void ApplySimpleTheme() {
+  VintageStyle::ApplyVintageSquaredTheme();
+  // Ensure alpha is opaque enough for simple mode
+  ImGui::GetStyle().Colors[ImGuiCol_WindowBg].w = 0.9f; 
 }
 
 ImVec2 WorldToScreen(const glm::vec3 &worldPos, const glm::mat4 &view,
@@ -454,7 +546,39 @@ void Application::Run() {
   bool showInfo = true;
 
   // Main game loop
+  // Start at Earth position
+  if (earth) {
+     float earthRad = earth->getRadius();
+     camera.Position = earth->getPosition() + glm::vec3(0, 0, earthRad * 3.0f); // offset
+  }
+
+  if (playingLaunch && audioSystem) {
+      std::cout << "Application: Starting Launch Audio." << std::endl;
+      audioSystem->playLaunch();
+  }
+  
+  // Reset timer to avoid huge delta from loading time
+  lastFrame = glfwGetTime();
+
   while (!glfwWindowShouldClose(m_Window)) {
+    // Audio Update
+    if (audioSystem) {
+        bool isMoving = (glfwGetKey(m_Window, GLFW_KEY_W) == GLFW_PRESS ||
+                         glfwGetKey(m_Window, GLFW_KEY_S) == GLFW_PRESS ||
+                         glfwGetKey(m_Window, GLFW_KEY_A) == GLFW_PRESS ||
+                         glfwGetKey(m_Window, GLFW_KEY_D) == GLFW_PRESS);
+        if (lightTravelActive) isMoving = true;
+        
+        audioSystem->setEngineActive(isMoving);
+        
+        // Mute Toggle (M)
+        static bool mKeyPressed = false;
+        if (glfwGetKey(m_Window, GLFW_KEY_M) == GLFW_PRESS && !mKeyPressed) {
+            audioSystem->toggleMute();
+            mKeyPressed = true;
+        }
+        if (glfwGetKey(m_Window, GLFW_KEY_M) == GLFW_RELEASE) mKeyPressed = false;
+    }
     float currentFrame = glfwGetTime();
     deltaTime = currentFrame - lastFrame;
     lastFrame = currentFrame;
@@ -511,6 +635,71 @@ void Application::Run() {
         }
     }
     
+    // Light speed travel animation
+    if (lightTravelActive && lightTravelFrom && lightTravelTo) {
+        // Target current position (planets move!)
+        glm::vec3 currentTargetPos = lightTravelTo->getPosition();
+        lightTravelEndPos = currentTargetPos; // Update for HUD accuracy
+        float targetRadius = lightTravelTo->getRadius();
+        
+        // Direction to target center
+        glm::vec3 toTarget = currentTargetPos - camera.Position;
+        float distToTarget = glm::length(toTarget);
+        glm::vec3 direction = glm::normalize(toTarget);
+        
+        // Stop at a comfortable viewing distance (e.g., 2x radius + minimal buffer)
+        // We want to stop slightly before the center to avoid clipping/crashing into it
+        float stopDistance = targetRadius * 2.0f;
+        if (stopDistance < 500.0f) stopDistance = 500.0f; // Minimum distance
+        
+        // Move camera
+        float moveStep = LIGHT_SPEED * deltaTime;
+        
+        lightTravelElapsedTime += deltaTime;
+        
+        // Check if we arrived or overshot
+        if (distToTarget - moveStep <= stopDistance) {
+            // Travel complete
+            lightTravelProgress = 1.0f;
+            lightTravelActive = false;
+            
+            // Snap to final position
+            camera.Position = currentTargetPos - (direction * stopDistance);
+            
+            // Look at the destination planet
+            camera.Front = direction; // Look forward (which is towards planet)
+            camera.Right = glm::normalize(glm::cross(camera.Front, glm::vec3(0.0f, 1.0f, 0.0f)));
+            camera.Up = glm::normalize(glm::cross(camera.Right, camera.Front));
+            
+            // Enable tracking on arrival for smooth transition
+            cameraTrackingEnabled = true;
+            trackedPlanet = lightTravelTo;
+            cameraTrackDistance = stopDistance;
+            cameraOrbitMode = false;
+            
+        } else {
+            // Move towards planet
+            camera.Position += direction * moveStep;
+            
+            // Look in travel direction
+            camera.Front = direction;
+            camera.Right = glm::normalize(glm::cross(camera.Front, glm::vec3(0.0f, 1.0f, 0.0f)));
+            camera.Up = glm::normalize(glm::cross(camera.Right, camera.Front));
+            
+            // Update progress for HUD
+            // We use the initial total distance to estimate percentage
+            float distTraveled = lightTravelTotalDistance - distToTarget; // Approx
+            lightTravelProgress = distTraveled / lightTravelTotalDistance;
+            if (lightTravelProgress < 0.0f) lightTravelProgress = 0.0f;
+            if (lightTravelProgress > 1.0f) lightTravelProgress = 1.0f;
+        }
+        
+        // Disable normal camera controls during travel
+        // (Ensure these stay disabled even if user tries to override during travel)
+        cameraTrackingEnabled = false;
+        trackedPlanet = nullptr;
+    }
+    
     int displayWidth, displayHeight;
     glfwGetFramebufferSize(m_Window, &displayWidth, &displayHeight);
 
@@ -551,11 +740,22 @@ void Application::Run() {
     // ADVANCED UI PANELS
     // =============================================================================
     
-    // TIME CONTROL PANEL - Top Right (moved down to avoid top HUD)
+    // Only show panels if NOT playing video
+    if (!playingLaunch) {
+    
+    // TIME CONTROL PANEL
     if (showTimeControl) {
-        ImGui::SetNextWindowPos(ImVec2(displayWidth - 320, 120), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowBgAlpha(0.93f);
-        ImGui::Begin("Time Control", &showTimeControl, ImGuiWindowFlags_AlwaysAutoResize);
+        ImGuiWindowFlags flags = showCockpit 
+            ? (ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove) 
+            : ImGuiWindowFlags_AlwaysAutoResize;
+            
+        if (showCockpit) {
+            ImGui::SetNextWindowPos(ImVec2(displayWidth - 320, displayHeight - 200), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(300, 180), ImGuiCond_Always);
+        } else {
+            ImGui::SetNextWindowPos(ImVec2(displayWidth - 320, 100), ImGuiCond_FirstUseEver);
+        }
+        ImGui::Begin("Time Control", &showTimeControl, flags);
         
         ImGui::TextColored(ImVec4(0.8f, 0.9f, 1.0f, 1.0f), "Simulation Speed");
         ImGui::Separator();
@@ -609,12 +809,19 @@ void Application::Run() {
         ImGui::End();
     }
     
-    // CAMERA & PLANET NAVIGATOR PANEL - Top Left
+    // CAMERA & PLANET NAVIGATOR PANEL
     {
-        ImGui::SetNextWindowPos(ImVec2(10, 40), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(340, 0), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowBgAlpha(0.93f);
-        ImGui::Begin("Navigation & Camera", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+        ImGuiWindowFlags flags = showCockpit 
+            ? (ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove) 
+            : ImGuiWindowFlags_AlwaysAutoResize;
+
+        if (showCockpit) {
+            ImGui::SetNextWindowPos(ImVec2(displayWidth/2 - 200, displayHeight - 220), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(400, 200), ImGuiCond_Always);
+        } else {
+             ImGui::SetNextWindowPos(ImVec2(10, 50), ImGuiCond_FirstUseEver);
+        }
+        ImGui::Begin("Navigation & Camera", nullptr, flags);
         
         // CAMERA CONTROLS SECTION
         ImGui::TextColored(ImVec4(0.8f, 0.9f, 1.0f, 1.0f), "Camera Controls");
@@ -863,12 +1070,67 @@ void Application::Run() {
         ImGui::PopStyleVar(2);
     }
     
-    // HELP & CONTROLS PANEL - Bottom Left
+    
+    // LIGHT TRAVEL HUD
+    if (lightTravelActive) {
+        ImGui::SetNextWindowPos(ImVec2(displayWidth / 2 - 200, 80));
+        ImGui::SetNextWindowSize(ImVec2(400, 0));
+        ImGui::SetNextWindowBgAlpha(0.6f);
+        
+        ImGui::Begin("##TravelHUD", nullptr, 
+                    ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | 
+                    ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoInputs);
+        
+        ImGui::SetWindowFontScale(1.2f);
+        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "TRAVELING AT LIGHT SPEED");
+        ImGui::SetWindowFontScale(1.0f);
+        
+        ImGui::Separator();
+        
+        ImGui::Text("%s -> %s", lightTravelFrom->getName().c_str(), lightTravelTo->getName().c_str());
+        
+        // Time display
+        int minutes = (int)lightTravelElapsedTime / 60;
+        float seconds = fmod(lightTravelElapsedTime, 60.0f);
+        ImGui::Text("Time Elapsed: %02d:%05.2f", minutes, seconds);
+        
+        // Distance remaining
+        float distRemaining = glm::length(lightTravelEndPos - camera.Position);
+        float distKm = distRemaining * MOON_DIAMETER_KM; // Convert pixels to km
+        
+        if (distKm > 1000000.0f)
+            ImGui::Text("Distance Remaining: %.1f million km", distKm / 1000000.0f);
+        else
+            ImGui::Text("Distance Remaining: %.0f km", distKm);
+            
+        // Progress bar
+        ImGui::ProgressBar(lightTravelProgress, ImVec2(-1, 0), "");
+        
+        ImGui::Spacing();
+        ImGui::TextDisabled("Press 'C' to stop");
+        
+        if (glfwGetKey(m_Window, GLFW_KEY_C) == GLFW_PRESS) {
+            lightTravelActive = false;
+        }
+        
+        ImGui::End();
+    }
+    
+    // HELP & CONTROLS PANEL
     if (showInfo) {
-        ImGui::SetNextWindowPos(ImVec2(10, displayHeight - 10), 
-                               ImGuiCond_Always, ImVec2(0.0f, 1.0f));
-        ImGui::SetNextWindowBgAlpha(0.93f);
-        ImGui::Begin("Controls & Help", &showInfo, ImGuiWindowFlags_AlwaysAutoResize);
+        ImGuiWindowFlags flags = showCockpit 
+            ? (ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove) 
+            : ImGuiWindowFlags_AlwaysAutoResize;
+
+        if (showCockpit) {
+            ImGui::SetNextWindowPos(ImVec2(20, displayHeight - 350), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(300, 330), ImGuiCond_Always);
+            ImGui::SetNextWindowBgAlpha(0.0f); 
+        } else {
+            ImGui::SetNextWindowPos(ImVec2(10, displayHeight - 10), ImGuiCond_FirstUseEver, ImVec2(0,1));
+            ImGui::SetNextWindowBgAlpha(0.9f);
+        }
+        ImGui::Begin("Controls & Help", &showInfo, flags);
         
         if (ImGui::CollapsingHeader("Keyboard Controls", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::Spacing();
@@ -896,6 +1158,13 @@ void Application::Run() {
             ImGui::TextColored(ImVec4(0.8f, 1.0f, 0.7f, 1.0f), "UI:");
             ImGui::BulletText("/ - Quick search");
             ImGui::BulletText("ESC - Exit dialog");
+            
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Audio:");
+            ImGui::BulletText("M - Toggle Mute");
+            
+            ImGui::Spacing();
+            ImGui::Checkbox("Play Launch Sequence", &showLaunchSequence);
         }
         
         if (ImGui::CollapsingHeader("Status")) {
@@ -927,7 +1196,6 @@ void Application::Run() {
         ImGui::Separator();
         ImGui::Spacing();
         ImGui::TextColored(ImVec4(0.5f, 0.6f, 0.5f, 0.7f), "Created by valhizen");
-        ImGui::TextDisabled("Valkyrie + Kaizen = Continuous Improvement");
         
         ImGui::End();
     }
@@ -971,9 +1239,74 @@ void Application::Run() {
         }
       }
       
+      // Check for /From/To travel syntax (e.g., "/Sun/Earth")
+      std::string fromPlanetName, toPlanetName;
+      bool isTravelCommand = false;
+      
+      if (searchStr.length() > 2 && searchStr.find('/') != std::string::npos) {
+          // Check if it starts with / or just contains it (allow Sun/Earth or /Sun/Earth)
+          size_t firstSlash = searchStr.find('/');
+          size_t secondSlash = searchStr.find('/', firstSlash + 1);
+          
+          if (secondSlash != std::string::npos) {
+             // Case: /Sun/Earth
+             fromPlanetName = searchStr.substr(firstSlash + 1, secondSlash - (firstSlash + 1));
+             toPlanetName = searchStr.substr(secondSlash + 1);
+             isTravelCommand = true;
+          } else if (firstSlash > 0) {
+             // Case: Sun/Earth
+             fromPlanetName = searchStr.substr(0, firstSlash);
+             toPlanetName = searchStr.substr(firstSlash + 1);
+             isTravelCommand = true;
+          }
+      }
+
       // Handle planet selection
       if (selectedPlanet || enterPressed) {
-        if (!selectedPlanet && !searchStr.empty()) {
+        if (isTravelCommand && enterPressed) {
+            // Initiate light speed travel
+            Planet* fromP = nullptr;
+            Planet* toP = nullptr;
+            
+            // Find planets
+            std::string fromLower = fromPlanetName;
+            std::string toLower = toPlanetName;
+            std::transform(fromLower.begin(), fromLower.end(), fromLower.begin(), ::tolower);
+            std::transform(toLower.begin(), toLower.end(), toLower.begin(), ::tolower);
+            
+            for (auto* p : planets) {
+                std::string pName = p->getName();
+                std::transform(pName.begin(), pName.end(), pName.begin(), ::tolower);
+                if (pName == fromLower) fromP = p;
+                if (pName == toLower) toP = p;
+            }
+            
+            if (fromP && toP) {
+                // Setup travel
+                lightTravelActive = true;
+                lightTravelFrom = fromP;
+                lightTravelTo = toP;
+                
+                // Position camera near 'from' planet
+                lightTravelStartPos = fromP->getPosition() + glm::vec3(0, 0, fromP->getRadius() * 2.0f);
+                camera.Position = lightTravelStartPos;
+                
+                // Destination position
+                lightTravelEndPos = toP->getPosition() + glm::vec3(0, 0, toP->getRadius() * 2.0f);
+                
+                lightTravelProgress = 0.0f;
+                lightTravelElapsedTime = 0.0f;
+                lightTravelTotalDistance = glm::length(lightTravelEndPos - lightTravelStartPos);
+                
+                showSearchDialog = false;
+                searchBuffer[0] = '\0';
+                
+                // Force flight mode (hide cursor) for immersion
+                cursorEnabled = false;
+                glfwSetInputMode(m_Window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            }
+        } else if (!selectedPlanet && !searchStr.empty()) {
+          // Normal single planet search
           // Find first matching planet on Enter
           for (auto *planet : planets) {
             std::string planetNameLower = planet->getName();
@@ -986,7 +1319,7 @@ void Application::Run() {
           }
         }
         
-        if (selectedPlanet) {
+        if (selectedPlanet && !isTravelCommand) {
           glm::vec3 targetPos = selectedPlanet->getPosition();
           float planetRadius = selectedPlanet->getRadius();
           
@@ -1003,8 +1336,8 @@ void Application::Run() {
       ImGui::End();
     }
 
-    // Draw labels for visible planets (only in flight mode)
-    if (showPlanetLabels && !cursorEnabled) {
+    // Draw labels for visible planets (only in flight mode OR during light speed travel)
+    if (showPlanetLabels && (!cursorEnabled || lightTravelActive)) {
       for (auto *planet : planets) {
       glm::vec3 planetPos = planet->getPosition();
       float planetRadius = planet->getRadius();
@@ -1082,6 +1415,29 @@ void Application::Run() {
       ImGui::End();
     }
 
+    // Render Cockpit Overlay
+    // Render Cockpit Overlay
+    if (!playingLaunch && showCockpit && m_Cockpit) m_Cockpit->render();
+    
+    // Video Playback Overlay
+    if (playingLaunch && videoPlayer) {
+        // Render video on top of everything (conceptually, actually replaces scene)
+        // But since we already rendered scene, we just draw over it.
+        // For efficiency we could skip scene render, but simple overlay is safer code-wise.
+        videoPlayer->update(deltaTime);
+        videoPlayer->render();
+        
+        if (videoPlayer->isFinished() || glfwGetKey(m_Window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+            playingLaunch = false;
+        }
+        
+        // Show Skip Text
+        ImGui::SetNextWindowPos(ImVec2(displayWidth - 200, displayHeight - 50));
+        ImGui::Begin("Skip", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoBackground);
+        ImGui::Text("SPACE to Skip");
+        ImGui::End();
+    }
+
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
@@ -1095,6 +1451,9 @@ void Application::Run() {
 }
 
 Application::~Application() {
+    if (m_Cockpit) delete m_Cockpit;
+    if (audioSystem) delete audioSystem;
+    if (videoPlayer) delete videoPlayer;
   ImGui_ImplOpenGL3_Shutdown();
   ImGui_ImplGlfw_Shutdown();
   ImGui::DestroyContext();
