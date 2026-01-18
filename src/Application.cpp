@@ -568,6 +568,7 @@ void Application::Run() {
                          glfwGetKey(m_Window, GLFW_KEY_A) == GLFW_PRESS ||
                          glfwGetKey(m_Window, GLFW_KEY_D) == GLFW_PRESS);
         if (lightTravelActive) isMoving = true;
+        if (playingLaunch) isMoving = false; // Block engine noise during video
         
         audioSystem->setEngineActive(isMoving);
         
@@ -1416,8 +1417,9 @@ void Application::Run() {
     }
 
     // Render Cockpit Overlay
-    // Render Cockpit Overlay
-    if (!playingLaunch && showCockpit && m_Cockpit) m_Cockpit->render();
+    if (showCockpit && m_Cockpit) m_Cockpit->render();
+    
+    } // End of !playingLaunch UI block
     
     // Video Playback Overlay
     if (playingLaunch && videoPlayer) {
