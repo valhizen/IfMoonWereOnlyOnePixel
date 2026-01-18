@@ -20,6 +20,8 @@ Camera camera(glm::vec3(0.0f, 500.0f, -3000.0f));
 float lastX = 800.0f / 2.0;
 float lastY = 600.0 / 2.0;
 bool firstMouse = true;
+float baseZoom = 45.0f;
+float warpZoomEffect = 0.0f; // 0.0 (normal) to 1.0 (warping)
 
 // Camera speed modes
 const float MOON_DIAMETER_KM = 3474.8f;
@@ -75,6 +77,8 @@ AudioSystem* audioSystem = nullptr;
 VideoPlayer* videoPlayer = nullptr;
 bool showLaunchSequence = true;
 bool playingLaunch = false;
+#include "AsteroidField.hpp"
+AsteroidField* asteroidField = nullptr;
 
 void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
   glViewport(0, 0, width, height);
@@ -256,6 +260,9 @@ void mouse_callback(GLFWwindow *window, double xposIn, double yposIn) {
 }
 
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset) {
+  baseZoom -= (float)yoffset;
+  if (baseZoom < 1.0f) baseZoom = 1.0f;
+  if (baseZoom > 90.0f) baseZoom = 90.0f;
   camera.ProcessMouseScroll(static_cast<float>(yoffset));
 }
 
@@ -560,6 +567,10 @@ void Application::Run() {
   // Reset timer to avoid huge delta from loading time
   lastFrame = glfwGetTime();
 
+  // Initialize Asteroid Field (between Mars and Jupiter: 2.1 to 3.3 AU)
+  // 1 AU ≈ 43053 pixels in this simulation
+  asteroidField = new AsteroidField(1000, 2.1f * 43053.0f, 3.3f * 43053.0f);
+
   while (!glfwWindowShouldClose(m_Window)) {
     // Audio Update
     if (audioSystem) {
@@ -568,7 +579,6 @@ void Application::Run() {
                          glfwGetKey(m_Window, GLFW_KEY_A) == GLFW_PRESS ||
                          glfwGetKey(m_Window, GLFW_KEY_D) == GLFW_PRESS);
         if (lightTravelActive) isMoving = true;
-        if (playingLaunch) isMoving = false; // Block engine noise during video
         
         audioSystem->setEngineActive(isMoving);
         
@@ -586,11 +596,21 @@ void Application::Run() {
 
     processInput(m_Window);
     glfwPollEvents();
+    
+    // Warp Effect logic - trigger during autopilot OR manual light speed flight
+    bool isWarping = lightTravelActive || (useLightSpeed && (glfwGetKey(m_Window, GLFW_KEY_W) == GLFW_PRESS || glfwGetKey(m_Window, GLFW_KEY_S) == GLFW_PRESS));
+    
+    if (isWarping) warpZoomEffect = glm::mix(warpZoomEffect, 1.0f, 2.0f * deltaTime);
+    else          warpZoomEffect = glm::mix(warpZoomEffect, 0.0f, 4.0f * deltaTime);
+    
+    camera.Zoom = baseZoom + (warpZoomEffect * 25.0f);
+    if (camera.Zoom > 115.0f) camera.Zoom = 115.0f; // Safety cap
 
     // UPDATE ALL PLANETS FIRST (before rendering)
     for (auto *planet : planets) {
       planet->update(deltaTime);
     }
+    if (asteroidField) asteroidField->update(deltaTime, simSettings.timeScale);
     
     // Camera tracking logic
     if (cameraTrackingEnabled && trackedPlanet != nullptr) {
@@ -727,6 +747,7 @@ void Application::Run() {
     for (auto *planet : planets) {
       planet->renderSphere(view, projection, camera.Position);
     }
+    if (asteroidField) asteroidField->render(view, projection, camera.Position);
 
     // ImGui
     ImGui_ImplOpenGL3_NewFrame();
@@ -1456,6 +1477,7 @@ Application::~Application() {
     if (m_Cockpit) delete m_Cockpit;
     if (audioSystem) delete audioSystem;
     if (videoPlayer) delete videoPlayer;
+    if (asteroidField) delete asteroidField;
   ImGui_ImplOpenGL3_Shutdown();
   ImGui_ImplGlfw_Shutdown();
   ImGui::DestroyContext();

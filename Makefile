@@ -42,7 +42,8 @@ MY_SRCS := $(SRC_DIR)/main.cpp \
 						$(SRC_DIR)/readTexture.cpp \
 						$(SRC_DIR)/Cockpit.cpp \
 						$(SRC_DIR)/AudioSystem.cpp \
-						$(SRC_DIR)/VideoPlayer.cpp
+						$(SRC_DIR)/VideoPlayer.cpp \
+						$(SRC_DIR)/AsteroidField.cpp
 
 
 
